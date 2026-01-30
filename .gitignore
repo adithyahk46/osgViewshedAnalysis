@@ -32,6 +32,16 @@ Makefile*
 *.qm
 *.prl
 
+#debug and release folders
+debug/
+release/
+build-*/
+
+#.qmake.stash
+.qmake.stash
+
+
+
 # Qt unit tests
 target_wrapper.*
 
