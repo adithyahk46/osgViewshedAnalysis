@@ -52,7 +52,6 @@ public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    void initializeBaseMap();
 private slots:
     void initOsg();
     void on_pushButton_clicked();
@@ -64,8 +63,10 @@ private:
     osg::ref_ptr<osgViewer::Viewer> viewer;
     osg::ref_ptr<osgEarth::MapNode> mapNode;
     osg::ref_ptr<osg::Group> root ;
+    osg::ref_ptr<osg::Group> shadowGroup;
+    osg::ref_ptr<osg::Group> testgroup ;
 
-    void updateViewer();
+    void initializeScene();
 };
 
 #endif // MAINWINDOW_H

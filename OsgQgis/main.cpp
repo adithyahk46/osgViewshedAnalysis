@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 
 #include <QApplication>
-
+#include <QStyleFactory>
 
 
 int usage(const char* name, const char* message)
@@ -14,6 +14,8 @@ int usage(const char* name, const char* message)
 
 int main(int argc, char *argv[])
 {
+
+    osgEarth::initialize();
 
    QApplication a(argc, argv);
 
@@ -36,6 +38,28 @@ int main(int argc, char *argv[])
     format.setStencilBufferSize(8);
     format.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
     QSurfaceFormat::setDefaultFormat(format);
+
+
+    // Set the Fusion style
+      a.setStyle(QStyleFactory::create("Fusion"));
+
+      // Optional: Set a light palette for the Fusion style
+      QPalette lightPalette;
+      lightPalette.setColor(QPalette::Window, QColor(240, 240, 240));  // Light grey
+      lightPalette.setColor(QPalette::WindowText, Qt::black);
+      lightPalette.setColor(QPalette::Base, QColor(255, 255, 255));   // White
+      lightPalette.setColor(QPalette::AlternateBase, QColor(240, 240, 240));  // Light grey
+      lightPalette.setColor(QPalette::ToolTipBase, Qt::white);
+      lightPalette.setColor(QPalette::ToolTipText, Qt::black);
+      lightPalette.setColor(QPalette::Text, Qt::black);
+      lightPalette.setColor(QPalette::Button, QColor(240, 240, 240));  // Light grey
+      lightPalette.setColor(QPalette::ButtonText, Qt::black);
+      lightPalette.setColor(QPalette::BrightText, Qt::red);
+
+      lightPalette.setColor(QPalette::Highlight, QColor(76, 163, 224));  // Blue highlight
+      lightPalette.setColor(QPalette::HighlightedText, Qt::white);
+
+      a.setPalette(lightPalette);
 
     MainWindow w;
     w.show();

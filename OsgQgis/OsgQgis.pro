@@ -36,12 +36,14 @@ LIBS += -losgQOpenGL -lopengl32
 
 SOURCES += \
     Viewshed3DAreaAnalysis.cpp \
+    VisibilityTestArea/VisibilityTestArea.cpp \
     XYZCoordinateAxes.cpp \
     main.cpp \
     mainwindow.cpp
 
 HEADERS += \
     Viewshed3DAreaAnalysis.h \
+    VisibilityTestArea/VisibilityTestArea.h \
     XYZCoordinateAxes.h \
     mainwindow.h
 
@@ -54,3 +56,9 @@ FORMS += \
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
+
+DISTFILES += \
+    VisibilityTestArea/depthMap.frag \
+    VisibilityTestArea/depthMap.vert \
+    VisibilityTestArea/visibilityShader.frag \
+    VisibilityTestArea/visibilityShader.vert
