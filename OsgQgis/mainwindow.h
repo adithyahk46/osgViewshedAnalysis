@@ -54,7 +54,6 @@ public:
 
 private slots:
     void initOsg();
-    void on_pushButton_clicked();
 
 private:
     Ui::MainWindow *ui;

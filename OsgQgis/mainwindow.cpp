@@ -1,55 +1,6 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 
-
-#include <osg/Geometry>
-#include <osg/Geode>
-#include <osg/LightModel>
-#include <osg/LightSource>
-
-#include <osgViewer/Viewer>
-#include <osg/Geometry>
-#include <osg/Geode>
-#include <osg/LineWidth>
-
-#include <osg/Geometry>
-#include <osg/Geode>
-#include <osg/Group>
-#include <osgViewer/Viewer>
-
-#include <osg/Vec4>
-#include <osg/Uniform>
-#include <osg/Vec3>
-#include <osg/Program>
-#include <osg/Shader>
-#include <osgShadow/ShadowedScene>
-#include <osgShadow/ShadowMap>
-
-
-
-#include <Viewshed3DAreaAnalysis.h>
-#include "XYZCoordinateAxes.h"
-
-MainWindow::MainWindow(QWidget *parent) :
-    QMainWindow(parent),
-    ui(new Ui::MainWindow)
-{
-    ui->setupUi(this);
-
-    osgWidget= new osgQOpenGLWidget();
-    osgWidget->setMouseTracking(true);
-    setCentralWidget(osgWidget);
-    QObject::connect(osgWidget, &osgQOpenGLWidget::initialized, [this] { initOsg();
-    });
-}
-
-MainWindow::~MainWindow()
-{
-    delete ui;
-}
-
-
-
 #include <osg/Camera>
 #include <osg/ShapeDrawable>
 #include <osg/Geode>
@@ -65,6 +16,91 @@ MainWindow::~MainWindow()
 #include <osg/Point>
 #include <osg/Math>
 
+#include "ViewshedAreaAnalysisWidget.h"
+#include "XYZCoordinateAxes.h"
+
+MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow)
+{
+    ui->setupUi(this);
+
+    osgWidget = new osgQOpenGLWidget();
+    osgWidget->setMouseTracking(true);
+
+    // Set OSG widget as central widget
+    setCentralWidget(osgWidget);
+
+    QObject::connect(osgWidget, &osgQOpenGLWidget::initialized, [this] {
+        initOsg();
+        ui->dockWidget->setWidget(new ViewshedAreaAnalysisWidget(testgroup, viewer) );
+
+    });
+
+}
+
+MainWindow::~MainWindow()
+{
+    delete ui;
+}
+
+#include <osg/Group>
+#include <osg/Geode>
+#include <osg/Geometry>
+#include <osg/Vec3>
+#include <osg/Array>
+#include <cmath>
+
+osg::ref_ptr<osg::Node> createElevatedSquare()
+{
+    const float halfSize = 200.0f;   // 200 width
+    const int gridSize = 50;          // resolution
+    const float maxHeight = 20.0f;    // elevation at origin
+
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry();
+    osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array();
+    osg::ref_ptr<osg::Vec3Array> normals = new osg::Vec3Array();
+
+    float step = (halfSize * 2.0f) / gridSize;
+
+    // Generate vertices
+    for (int y = 0; y <= gridSize; ++y)
+    {
+        for (int x = 0; x <= gridSize; ++x)
+        {
+            float px = -halfSize + x * step;
+            float py = -halfSize + y * step;
+
+            float dist = std::sqrt(px * px + py * py);
+            float height = maxHeight * std::exp(-(dist * dist) / 2000.0f);
+
+            vertices->push_back(osg::Vec3(px, py, height));
+            normals->push_back(osg::Vec3(0.0f, 0.0f, 1.0f));
+        }
+    }
+
+    geom->setVertexArray(vertices.get());
+    geom->setNormalArray(normals.get(), osg::Array::BIND_PER_VERTEX);
+
+    // Create triangle strips
+    for (int y = 0; y < gridSize; ++y)
+    {
+        osg::ref_ptr<osg::DrawElementsUInt> strip =
+            new osg::DrawElementsUInt(GL_TRIANGLE_STRIP);
+
+        for (int x = 0; x <= gridSize; ++x)
+        {
+            strip->push_back((y + 1) * (gridSize + 1) + x);
+            strip->push_back(y * (gridSize + 1) + x);
+        }
+        geom->addPrimitiveSet(strip.get());
+    }
+
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode();
+    geode->addDrawable(geom.get());
+
+    return geode;
+}
 
 
 void MainWindow::initializeScene()
@@ -72,80 +108,45 @@ void MainWindow::initializeScene()
 
     testgroup = new osg::Group();
 
+    //axes
+    {
     osg::ref_ptr<XYZCoordinateAxes> axes = new XYZCoordinateAxes();
     axes->setAxisLength(200.0f);
     axes->setGridUnit(10.0f);
     axes->setGridColor(osg::Vec4(0.4f, 0.4f, 0.4f, 1.0f));
     axes->build();
     root->addChild(axes);
+    }
 
+    //cube
+    {
     osg::ref_ptr<osg::Geode> cubeGeode = new osg::Geode;
     osg::ref_ptr<osg::ShapeDrawable> cube =
-        new osg::ShapeDrawable(new osg::Box(osg::Vec3(10,0,2), 4.0f));
+        new osg::ShapeDrawable(new osg::Box(osg::Vec3(20,10,20), 4.0f));
     cube->setColor(osg::Vec4(0.2f, 0.5f, 0.8f, 1.0f));
     cubeGeode->addDrawable(cube.get());
     cubeGeode->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
 
     testgroup->addChild(cubeGeode.get());
+    }
 
-
+    //sphere
+    {
     osg::ref_ptr<osg::Geode> sphereGeode = new osg::Geode;
     osg::ref_ptr<osg::ShapeDrawable> sphere =
-        new osg::ShapeDrawable(new osg::Sphere(osg::Vec3(3,2,2), 1.0f));
+        new osg::ShapeDrawable(new osg::Sphere(osg::Vec3(3,2,30), 1.0f));
     sphere->setColor(osg::Vec4(1,1,0,1));
     sphereGeode->addDrawable(sphere.get());
 
     sphereGeode->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
 
     testgroup->addChild(sphereGeode.get());
-
-    osg::ref_ptr<osg::Geometry> planeGeom = new osg::Geometry;
-    osg::ref_ptr<osg::Vec3Array> planeverts = new osg::Vec3Array;
-    osg::ref_ptr<osg::Vec4Array> planecolors = new osg::Vec4Array;
-
-    float size = 200.0f;
-    planeverts->push_back(osg::Vec3(-size , size, -0.02f));
-    planeverts->push_back(osg::Vec3(size , size, -0.02f));
-    planeverts->push_back(osg::Vec3(size , -size, -0.02f));
-    planeverts->push_back(osg::Vec3(-size , -size, -0.02f));
-
-    planecolors->push_back(osg::Vec4(0.8f,0.8f,0.8f, 1.0f));
-
-    planeGeom->setVertexArray(planeverts.get());
-    planeGeom->setColorArray(planecolors.get(), osg::Array::BIND_OVERALL);
-    osg::ref_ptr<osg::DrawElementsUInt> indices =
-        new osg::DrawElementsUInt(GL_TRIANGLES);
-
-    indices->push_back(0);
-    indices->push_back(1);
-    indices->push_back(2);
-
-    indices->push_back(0);
-    indices->push_back(2);
-    indices->push_back(3);
-
-    planeGeom->addPrimitiveSet(indices.get());
-
-    osg::ref_ptr<osg::Geode> planeGeode = new osg::Geode;
-    planeGeode->addDrawable(planeGeom.get());
-
-    osg::StateSet* planeSS = planeGeode->getOrCreateStateSet();
-    planeSS->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
-
-    root->addChild(planeGeode.get());
+    }
 
 
-}
+    testgroup->addChild(createElevatedSquare());
 
-#include "VisibilityTestArea/VisibilityTestArea.h"
 
-void MainWindow::on_pushButton_clicked()
-{
-
- osg::Vec3d observationPoint(20.0, 20.0,20.0);  // X, Y, Z position
-    VisibilityTestArea* visibilityTest = new VisibilityTestArea(testgroup, viewer, observationPoint);
-    // visibilityTest->setParameter(observationPoint, visibilityRadius);
-    visibilityTest->buildModel();
 
 }
 
@@ -168,3 +169,4 @@ void MainWindow::initOsg()
 
 
 }
+
