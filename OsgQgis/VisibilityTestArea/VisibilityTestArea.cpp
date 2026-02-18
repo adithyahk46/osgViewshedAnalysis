@@ -115,7 +115,7 @@ VisibilityTestArea::VisibilityTestArea(osg::Group* sceneRoot, osgViewer::Viewer*
 
         const float halfSize = 200.0f;   // 200 width
         const int gridSize = 50;          // resolution
-        const float maxHeight = 20.0f;    // elevation at origin
+        const float maxHeight = 50.0f;    // elevation at origin
 
         osg::ref_ptr<osg::Geometry> geom = new osg::Geometry();
         osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array();
@@ -159,8 +159,15 @@ VisibilityTestArea::VisibilityTestArea(osg::Group* sceneRoot, osgViewer::Viewer*
         osg::ref_ptr<osg::Geode> geode = new osg::Geode();
         geode->addDrawable(geom.get());
 
+        osg::ref_ptr<osg::MatrixTransform> xform =new osg::MatrixTransform();
 
-        _shadowedScene->addChild(geode);
+        xform->addChild(geode.get());
+
+        xform->setMatrix(osg::Matrix::translate(_lightSource));
+
+
+
+        _shadowedScene->addChild(xform);
 
 
 
@@ -253,6 +260,15 @@ void VisibilityTestArea::setViwerPosition(const osg::Vec3 position)
                osg::Matrix::translate(position)
            );
        }
+}
+
+void VisibilityTestArea::setRadius(int radius)
+{
+    if(_viewRadiusUniform.valid()){
+        _viewRadiusUniform->set((float)radius);
+        _farPlaneUniform->set(_lightSource.z()+(float)radius);
+    }
+    else _viweingRadius = radius;
 }
 
 void  VisibilityTestArea::updateAttributes()
@@ -370,7 +386,7 @@ void  VisibilityTestArea::buildModel()
 
     _parentScene->getOrCreateStateSet()->setTextureAttributeAndModes(1, depthMap, osg::StateAttribute::ON);
     _parentScene->getOrCreateStateSet()->setAttribute(_visibilityShader, osg::StateAttribute::ON);
-    _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("baseTexture", 1));
+    _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("baseTexture", 0));
     _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("shadowMap", 1));
     _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("visibleColor", colorToVec(visibleColor)));
     _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("invisibleColor", colorToVec(invisibleColor)));
@@ -402,6 +418,13 @@ void  VisibilityTestArea::clear()
         _depthCameras[i]->removeChild(_shadowedScene);
         _parentScene->removeChild(_depthCameras[i]);
     }
+
+    _parentScene->getOrCreateStateSet()->removeUniform(_lightPosUniform);
+    _parentScene->getOrCreateStateSet()->removeUniform(_farPlaneUniform);
+    _parentScene->getOrCreateStateSet()->removeUniform(_nearPlaneUniform);
+    _parentScene->getOrCreateStateSet()->removeUniform(_viewRadiusUniform);
+
+
 
     _parentScene->removeChild(_shadowedScene);
     _parentScene->getParent(0)->removeChild(_lightIndicator);

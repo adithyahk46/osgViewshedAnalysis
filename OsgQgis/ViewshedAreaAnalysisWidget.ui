@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>341</width>
-    <height>717</height>
+    <height>753</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -41,34 +41,6 @@
         </property>
        </widget>
       </item>
-      <item row="2" column="0">
-       <widget class="QLabel" name="label_2">
-        <property name="text">
-         <string>Latitude:</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="0">
-       <widget class="QLabel" name="label_4">
-        <property name="text">
-         <string>Altitude(m):</string>
-        </property>
-       </widget>
-      </item>
-      <item row="4" column="0">
-       <widget class="QLabel" name="label_6">
-        <property name="text">
-         <string>Roll</string>
-        </property>
-       </widget>
-      </item>
-      <item row="5" column="0">
-       <widget class="QLabel" name="label_5">
-        <property name="text">
-         <string>Pitch:</string>
-        </property>
-       </widget>
-      </item>
       <item row="1" column="1">
        <widget class="QDoubleSpinBox" name="sb_longitude">
         <property name="decimals">
@@ -79,6 +51,13 @@
         </property>
         <property name="maximum">
          <double>180.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="label_2">
+        <property name="text">
+         <string>Latitude:</string>
         </property>
        </widget>
       </item>
@@ -95,6 +74,13 @@
         </property>
        </widget>
       </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_4">
+        <property name="text">
+         <string>Altitude(m):</string>
+        </property>
+       </widget>
+      </item>
       <item row="3" column="1">
        <widget class="QDoubleSpinBox" name="sb_altitude">
         <property name="decimals">
@@ -108,6 +94,13 @@
         </property>
        </widget>
       </item>
+      <item row="4" column="0">
+       <widget class="QLabel" name="label_6">
+        <property name="text">
+         <string>Roll</string>
+        </property>
+       </widget>
+      </item>
       <item row="4" column="1">
        <widget class="QDoubleSpinBox" name="sb_roll">
         <property name="minimum">
@@ -118,6 +111,13 @@
         </property>
         <property name="value">
          <double>-45.000000000000000</double>
+        </property>
+       </widget>
+      </item>
+      <item row="5" column="0">
+       <widget class="QLabel" name="label_5">
+        <property name="text">
+         <string>Pitch:</string>
         </property>
        </widget>
       </item>
@@ -188,12 +188,18 @@
        </widget>
       </item>
       <item row="2" column="1">
-       <widget class="QDoubleSpinBox" name="doubleSpinBox">
+       <widget class="QDoubleSpinBox" name="sb_distance">
         <property name="minimum">
-         <double>10.000000000000000</double>
+         <double>100.000000000000000</double>
         </property>
         <property name="maximum">
-         <double>10000.000000000000000</double>
+         <double>1000000000000.000000000000000</double>
+        </property>
+        <property name="singleStep">
+         <double>50.000000000000000</double>
+        </property>
+        <property name="value">
+         <double>1000.000000000000000</double>
         </property>
        </widget>
       </item>

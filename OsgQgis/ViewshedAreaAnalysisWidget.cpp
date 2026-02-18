@@ -92,17 +92,6 @@ ViewshedAreaAnalysisWidget::ViewshedAreaAnalysisWidget(osg::Group* root, osgView
     ui->sb_latitude->setValue(20);
     ui->sb_altitude->setValue(20);
 
-    connect(ui->sb_longitude, &QDoubleSpinBox::valueChanged, this,[this](double value){
-        viewShed->setViwerPosition({(float)value,(float)ui->sb_latitude->value(),(float)ui->sb_altitude->value()});
-    });
-
-    connect(ui->sb_latitude, &QDoubleSpinBox::valueChanged, this,[this](double value){
-        viewShed->setViwerPosition({(float)ui->sb_longitude->value(),(float)value,(float)ui->sb_altitude->value()});
-    });
-    connect(ui->sb_altitude, &QDoubleSpinBox::valueChanged, this,[this](double value){
-        viewShed->setViwerPosition({(float)ui->sb_longitude->value(),(float)ui->sb_latitude->value(),(float)value});
-    });
-
 }
 
 ViewshedAreaAnalysisWidget::~ViewshedAreaAnalysisWidget()
@@ -130,5 +119,19 @@ void ViewshedAreaAnalysisWidget::on_pb_runORupdate_clicked()
        // visibilityTest->setParameter(observationPoint, visibilityRadius);
        viewShed->buildModel();
 
+       connect(ui->sb_longitude, &QDoubleSpinBox::valueChanged, this,[this](double value){
+           viewShed->setViwerPosition({(float)value,(float)ui->sb_latitude->value(),(float)ui->sb_altitude->value()});
+       });
+
+       connect(ui->sb_latitude, &QDoubleSpinBox::valueChanged, this,[this](double value){
+           viewShed->setViwerPosition({(float)ui->sb_longitude->value(),(float)value,(float)ui->sb_altitude->value()});
+       });
+       connect(ui->sb_altitude, &QDoubleSpinBox::valueChanged, this,[this](double value){
+           viewShed->setViwerPosition({(float)ui->sb_longitude->value(),(float)ui->sb_latitude->value(),(float)value});
+       });
+
+       connect(ui->sb_distance, &QDoubleSpinBox::valueChanged, this,[this](int value){
+           viewShed->setRadius(value);
+       });
 }
 

@@ -27,6 +27,8 @@ public:
     void clear();
     void setViwerPosition(const osg::Vec3 position);
 
+    void setRadius(int radius);
+
     void buildModel();
     void updateAttributes();
 
