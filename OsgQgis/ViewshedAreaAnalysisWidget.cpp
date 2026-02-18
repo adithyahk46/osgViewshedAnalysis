@@ -126,7 +126,7 @@ void ViewshedAreaAnalysisWidget::on_pb_pickLocation_clicked()
 void ViewshedAreaAnalysisWidget::on_pb_runORupdate_clicked()
 {
     osg::Vec3d observationPoint(20.0, 20.0,20.0);  // X, Y, Z position
-      viewShed = new VisibilityTestArea(_root, _viewer, observationPoint);
+      viewShed = new VisibilityTestArea(_root, _viewer, observationPoint, 200);
        // visibilityTest->setParameter(observationPoint, visibilityRadius);
        viewShed->buildModel();
 

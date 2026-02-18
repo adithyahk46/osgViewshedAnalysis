@@ -16,6 +16,8 @@
 #include <osg/Point>
 #include <osg/Math>
 
+#include <osgEarth/LogarithmicDepthBuffer>
+
 #include "ViewshedAreaAnalysisWidget.h"
 #include "XYZCoordinateAxes.h"
 
@@ -144,7 +146,7 @@ void MainWindow::initializeScene()
     }
 
 
-    testgroup->addChild(createElevatedSquare());
+    // testgroup->addChild(createElevatedSquare());
 
 
 
@@ -155,6 +157,10 @@ void MainWindow::initOsg()
 {
     viewer = osgWidget->getOsgViewer();
     viewer->setThreadingModel(osgViewer::Viewer::SingleThreaded);
+
+    // osgEarth::Util::LogarithmicDepthBuffer ldb;
+    // ldb.install(viewer->getCamera());
+
     root = new osg::Group();
     initializeScene();
 

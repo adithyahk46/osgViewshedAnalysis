@@ -21,7 +21,7 @@ class VisibilityTestArea
 {
 
 public:
-    VisibilityTestArea(osg::Group* sceneRoot, osgViewer::Viewer* viewer, osg::Vec3 lightSource);
+    VisibilityTestArea(osg::Group* sceneRoot, osgViewer::Viewer* viewer, osg::Vec3 lightSource, int radius);
     ~VisibilityTestArea();
 
     void clear();
@@ -63,6 +63,10 @@ private:
     osg::ref_ptr<osg::Uniform> _lightPosUniform;
     osg::ref_ptr<osg::Uniform> _viewRadiusUniform;
     osg::ref_ptr<osg::Uniform> _inverseViewUniform[6] ;
+    osg::ref_ptr<osg::Uniform> _farPlaneUniform;
+    osg::ref_ptr<osg::Uniform> _nearPlaneUniform;
+
+
 
 
 

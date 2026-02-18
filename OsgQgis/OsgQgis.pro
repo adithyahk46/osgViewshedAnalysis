@@ -8,6 +8,8 @@ CONFIG += c++17
 DEFINES += CPL_DEBUG=1
 DEFINES += OSGEARTH_NOTIFY_LEVEL=INFO
 
+# Define a macro that the C++ code can see
+DEFINES += SOURCE_PATH=\\\"$$PWD\\\"
 
 CONFIG += unity_build
 UNITY_BUILD_BATCH_SIZE = 12
