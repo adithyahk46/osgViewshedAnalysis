@@ -1,16 +1,5 @@
 ﻿#include "VisibilityTestArea.h"
 
-#include <QDockWidget>
-#include <QGridLayout>
-#include <QLabel>
-#include <QSpinBox>
-#include <QSlider>
-#include <QPushButton>
-#include <QMenu>
-#include <QToolBar>
-#include <QToolButton>
-#include <QAction>
-#include <QObject>
 
 #include <osg/LineWidth>
 #include <osg/ShapeDrawable>
@@ -255,7 +244,7 @@ void VisibilityTestArea::setViwerPosition(const osg::Vec3 position)
 {
     _lightSource = position;
     _lightPosUniform->set(_lightSource);
-    _farPlaneUniform->set(_lightSource.z());
+    _farPlaneUniform->set(_lightSource.z()+(float)_viweingRadius);
     updateAttributes();
 
     if (_lightIndicator.valid())
@@ -354,12 +343,13 @@ void  VisibilityTestArea::buildModel()
 
     // Light source in shader
     float                     near_plane = 0.5f;
-    // float                     far_plane  = 500.0f;
+    float                     far_plane  = _lightSource.z()+(float)_viweingRadius;
+
     _lightPosUniform = new osg::Uniform("lightPos", _lightSource);
     _viewRadiusUniform = new osg::Uniform("user_area", (float)_viweingRadius);
-    _farPlaneUniform = new osg::Uniform("far_plane",_lightSource.z());
+    _farPlaneUniform = new osg::Uniform("far_plane",far_plane);
     _nearPlaneUniform = new osg::Uniform("near_plane", near_plane);
-    osg::Matrix               shadowProj = osg::Matrix::perspective(90.0, SM_TEXTURE_WIDTH / SM_TEXTURE_WIDTH, near_plane, _lightSource.z());
+    osg::Matrix               shadowProj = osg::Matrix::perspective(90.0, SM_TEXTURE_WIDTH / SM_TEXTURE_WIDTH, near_plane, far_plane);
 
 
     // Generate one camera for each side of the shadow cubemap
@@ -380,7 +370,7 @@ void  VisibilityTestArea::buildModel()
 
     _parentScene->getOrCreateStateSet()->setTextureAttributeAndModes(1, depthMap, osg::StateAttribute::ON);
     _parentScene->getOrCreateStateSet()->setAttribute(_visibilityShader, osg::StateAttribute::ON);
-    _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("baseTexture", 0));
+    _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("baseTexture", 1));
     _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("shadowMap", 1));
     _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("visibleColor", colorToVec(visibleColor)));
     _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("invisibleColor", colorToVec(invisibleColor)));
