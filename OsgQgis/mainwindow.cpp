@@ -53,55 +53,194 @@ MainWindow::~MainWindow()
 #include <osg/Array>
 #include <cmath>
 
-osg::ref_ptr<osg::Node> createElevatedSquare()
+ osg::ref_ptr<osg::Geode> createElevatedSquare()
 {
-    const float halfSize = 200.0f;   // 200 width
-    const int gridSize = 50;          // resolution
-    const float maxHeight = 20.0f;    // elevation at origin
+    std::string dt2Path =
+        "C:/Users/pnmt1054/Adithya_working_directory/Data/Elevation/43J11.dt2";
 
-    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry();
+    std::string texturePath =
+        "C:/Users/pnmt1054/Videos/Screen Recordings/Screenshot 2026-02-19 115004.png";
+
+    std::ifstream file(dt2Path, std::ios::binary);
+    if (!file)
+    {
+        std::cout << "Failed to open DT2 file!" << std::endl;
+    }
+
+    // ===============================
+    // 1. Read DT2 Dimensions
+    // ===============================
+    char uhl[80];
+    file.read(uhl, 80);
+
+    std::string colStr(uhl + 47, 4);
+    std::string rowStr(uhl + 51, 4);
+
+    int width  = std::stoi(colStr);
+    int height = std::stoi(rowStr);
+
+    file.seekg(648 + 2700, std::ios::cur);
+
+    std::vector<std::vector<float>> elevation(height,
+        std::vector<float>(width, 0.0f));
+
+    for (int col = 0; col < width; ++col)
+    {
+        file.seekg(8, std::ios::cur);
+
+        for (int row = 0; row < height; ++row)
+        {
+            unsigned char bytes[2];
+            file.read((char*)bytes, 2);
+
+            short value = (short)((bytes[0] << 8) | bytes[1]);
+
+            if (value == -32767)
+                value = 0;
+
+            elevation[row][col] = (float)value;
+        }
+
+        file.seekg(4, std::ios::cur);
+    }
+
+    file.close();
+
+    // ===============================
+    // 2. Create Geometry
+    // ===============================
+    osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
     osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array();
-    osg::ref_ptr<osg::Vec3Array> normals = new osg::Vec3Array();
+    osg::ref_ptr<osg::Vec3Array> normals  = new osg::Vec3Array();
+    osg::ref_ptr<osg::Vec2Array> texcoords = new osg::Vec2Array();
+    osg::ref_ptr<osg::DrawElementsUInt> indices =
+        new osg::DrawElementsUInt(GL_TRIANGLES);
 
-    float step = (halfSize * 2.0f) / gridSize;
+    float spacing = 1.0f;
+    float heightScale = 0.05f;
 
-    // Generate vertices
-    for (int y = 0; y <= gridSize; ++y)
+    float halfWidth  = (width  - 1) * spacing * 0.5f;
+    float halfHeight = (height - 1) * spacing * 0.5f;
+
+    // Create vertices + texcoords
+    for (int r = 0; r < height; ++r)
     {
-        for (int x = 0; x <= gridSize; ++x)
+        for (int c = 0; c < width; ++c)
         {
-            float px = -halfSize + x * step;
-            float py = -halfSize + y * step;
+            float x = c * spacing - halfWidth;
+            float y = r * spacing - halfHeight;
+            float z = elevation[r][c] * heightScale;
 
-            float dist = std::sqrt(px * px + py * py);
-            float height = maxHeight * std::exp(-(dist * dist) / 2000.0f);
+            vertices->push_back(osg::Vec3(x, y, z));
 
-            vertices->push_back(osg::Vec3(px, py, height));
-            normals->push_back(osg::Vec3(0.0f, 0.0f, 1.0f));
+            texcoords->push_back(osg::Vec2(
+                (float)c / (width - 1),
+                1.0f - (float)r / (height - 1)
+            ));
+
+            normals->push_back(osg::Vec3(0.0f, 0.0f, 0.0f)); // initialize
         }
     }
 
-    geom->setVertexArray(vertices.get());
-    geom->setNormalArray(normals.get(), osg::Array::BIND_PER_VERTEX);
-
-    // Create triangle strips
-    for (int y = 0; y < gridSize; ++y)
+    // Create indices
+    for (int r = 0; r < height - 1; ++r)
     {
-        osg::ref_ptr<osg::DrawElementsUInt> strip =
-            new osg::DrawElementsUInt(GL_TRIANGLE_STRIP);
-
-        for (int x = 0; x <= gridSize; ++x)
+        for (int c = 0; c < width - 1; ++c)
         {
-            strip->push_back((y + 1) * (gridSize + 1) + x);
-            strip->push_back(y * (gridSize + 1) + x);
+            int i0 = r * width + c;
+            int i1 = r * width + c + 1;
+            int i2 = (r + 1) * width + c;
+            int i3 = (r + 1) * width + c + 1;
+
+            indices->push_back(i0);
+            indices->push_back(i1);
+            indices->push_back(i2);
+
+            indices->push_back(i1);
+            indices->push_back(i3);
+            indices->push_back(i2);
+
+            // ----- NORMAL ACCUMULATION -----
+
+            osg::Vec3 v0 = (*vertices)[i0];
+            osg::Vec3 v1 = (*vertices)[i1];
+            osg::Vec3 v2 = (*vertices)[i2];
+            osg::Vec3 v3 = (*vertices)[i3];
+
+            osg::Vec3 n0 = (v1 - v0) ^ (v2 - v0);
+            n0.normalize();
+
+            (*normals)[i0] += n0;
+            (*normals)[i1] += n0;
+            (*normals)[i2] += n0;
+
+            osg::Vec3 n1 = (v3 - v1) ^ (v2 - v1);
+            n1.normalize();
+
+            (*normals)[i1] += n1;
+            (*normals)[i3] += n1;
+            (*normals)[i2] += n1;
         }
-        geom->addPrimitiveSet(strip.get());
     }
 
+    // Normalize accumulated normals
+    for (unsigned int i = 0; i < normals->size(); ++i)
+    {
+        (*normals)[i].normalize();
+    }
+
+    // ===============================
+    // 3. Assign Geometry Arrays
+    // ===============================
+    geometry->setVertexArray(vertices.get());
+    geometry->setNormalArray(normals.get(), osg::Array::BIND_PER_VERTEX);
+    geometry->setTexCoordArray(0, texcoords.get());
+    geometry->addPrimitiveSet(indices.get());
+
+    // ===============================
+    // 4. Apply Texture
+    // ===============================
+    osg::ref_ptr<osg::Image> textureImage =
+        osgDB::readImageFile(texturePath);
+
+    if (!textureImage)
+    {
+        std::cout << "Failed to load texture!" << std::endl;
+    }
+
+    osg::ref_ptr<osg::Texture2D> texture =
+        new osg::Texture2D(textureImage.get());
+
+    texture->setFilter(osg::Texture::MIN_FILTER,
+                       osg::Texture::LINEAR_MIPMAP_LINEAR);
+    texture->setFilter(osg::Texture::MAG_FILTER,
+                       osg::Texture::LINEAR);
+    texture->setWrap(osg::Texture::WRAP_S, osg::Texture::CLAMP_TO_EDGE);
+    texture->setWrap(osg::Texture::WRAP_T, osg::Texture::CLAMP_TO_EDGE);
+
+    // ===============================
+    // 5. Create Geode + State
+    // ===============================
     osg::ref_ptr<osg::Geode> geode = new osg::Geode();
-    geode->addDrawable(geom.get());
+    geode->addDrawable(geometry.get());\
+
+
+    osg::ref_ptr<osg::Light> light = new osg::Light;
+    light->setLightNum(0);
+    light->setPosition(osg::Vec4(0.0f, 0.0f, 1000.0f, 1.0f));
+
+    osg::ref_ptr<osg::LightSource> lightSource = new osg::LightSource;
+    lightSource->setLight(light.get());
+
+    lightSource->addChild(geode.get());
+
+    osg::StateSet* stateSet = geode->getOrCreateStateSet();
+    stateSet->setTextureAttributeAndModes(
+        0, texture.get(), osg::StateAttribute::ON);
+
 
     return geode;
+
 }
 
 
@@ -129,7 +268,7 @@ void MainWindow::initializeScene()
     cubeGeode->addDrawable(cube.get());
     cubeGeode->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
 
-    testgroup->addChild(cubeGeode.get());
+    // testgroup->addChild(cubeGeode.get());
     }
 
     //sphere
@@ -142,11 +281,18 @@ void MainWindow::initializeScene()
 
     sphereGeode->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
 
-    testgroup->addChild(sphereGeode.get());
+    // testgroup->addChild(sphereGeode.get());
     }
 
 
-    // testgroup->addChild(createElevatedSquare());
+     osg::ref_ptr<osg::Geode> geode = createElevatedSquare();
+    osg::ref_ptr<osg::MatrixTransform> xform =new osg::MatrixTransform();
+
+    xform->addChild(geode.get());
+
+    xform->setMatrix(osg::Matrix::translate(osg::Vec3(0,0,-78)));
+
+    testgroup->addChild(xform);
 
 
 

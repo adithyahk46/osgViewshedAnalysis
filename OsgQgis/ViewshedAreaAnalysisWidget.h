@@ -28,6 +28,11 @@ private slots:
 
     void on_pb_runORupdate_clicked();
 
+    void on_sb_verticleAngle_valueChanged(double arg1);
+
+private:
+    osg::Vec4 colorToVec(const QColor &color);
+
 private:
     Ui::ViewshedAreaAnalysisWidget *ui;
      osgViewer::Viewer *_viewer = nullptr;

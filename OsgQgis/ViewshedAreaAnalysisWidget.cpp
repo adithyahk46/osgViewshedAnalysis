@@ -73,24 +73,33 @@ ViewshedAreaAnalysisWidget::ViewshedAreaAnalysisWidget(osg::Group* root, osgView
     connect(boundaryColor, &ColorPickerCheckBox::colorChanged,this, [this](const QColor& c)
     {
         qDebug() << "Color changed to:" << c.name();
-        osg::Vec4 osgColor(
-                c.redF(),   // 0.0 – 1.0
-                c.greenF(),
-                c.blueF(),
-                ui->sb_boundarylineOpacity->value()/100
-            );
-
+        osg::Vec4 osgColor(c.redF(),c.greenF(),c.blueF(),ui->sb_boundarylineOpacity->value()/100);
             // viewShed->setBorderLineColor(osgColor);
-
     });
 
+    connect(visibleColor, &ColorPickerCheckBox::colorChanged,this, [this](const QColor& c)
+    {
+        qDebug() << "Color changed to:" << c.name();
+        osg::Vec4 osgColor(c.redF(),c.greenF(),c.blueF(),ui->sb_visibleAreaOpacity->value()/100);
+            viewShed->setVisibleAreaColor(osgColor);
+    });
+
+    connect(hiddenColor, &ColorPickerCheckBox::colorChanged,this, [this](const QColor& c)
+    {
+        qDebug() << "Color changed to:" << c.name();
+        osg::Vec4 osgColor(c.redF(),c.greenF(),c.blueF(),ui->sb_hiddenAreaOpacity->value()/100);
+            viewShed->setInvisibleAreaColor(osgColor);
+    });
     ui->vl_visibleAreaColor->addWidget(visibleColor);
     ui->vl_hiddenAreaColor->addWidget(hiddenColor);
     ui->vl_boundaryColor->addWidget(boundaryColor);
 
-    ui->sb_longitude->setValue(20);
-    ui->sb_latitude->setValue(20);
+    ui->sb_longitude->setValue(150);
+    ui->sb_latitude->setValue(100);
     ui->sb_altitude->setValue(20);
+
+    ui->sb_distance->setValue(200);
+    ui->sb_verticleAngle->setValue(90);
 
 }
 
@@ -114,7 +123,7 @@ void ViewshedAreaAnalysisWidget::on_pb_pickLocation_clicked()
 
 void ViewshedAreaAnalysisWidget::on_pb_runORupdate_clicked()
 {
-    osg::Vec3d observationPoint(20.0, 20.0,20.0);  // X, Y, Z position
+    osg::Vec3d observationPoint(150.0, 100.0,20.0);  // X, Y, Z position
       viewShed = new VisibilityTestArea(_root, _viewer, observationPoint, 200);
        // visibilityTest->setParameter(observationPoint, visibilityRadius);
        viewShed->buildModel();
@@ -133,5 +142,15 @@ void ViewshedAreaAnalysisWidget::on_pb_runORupdate_clicked()
        connect(ui->sb_distance, &QDoubleSpinBox::valueChanged, this,[this](int value){
            viewShed->setRadius(value);
        });
+}
+
+osg::Vec4 ViewshedAreaAnalysisWidget::colorToVec(const QColor &color)
+{
+    return osg::Vec4(color.redF(), color.greenF(), color.blueF(), color.alphaF());
+}
+
+void ViewshedAreaAnalysisWidget::on_sb_verticleAngle_valueChanged(double arg1)
+{
+    viewShed->setVerticalFOV((int)arg1);
 }
 

@@ -12,6 +12,8 @@
 #include <osgUtil/SmoothingVisitor>
 #include <osgSim/OverlayNode>
 
+#include <osg/AutoTransform>
+
 enum TraversalOption
 {
     INTERSECT_IGNORE = 0x00000004,
@@ -32,28 +34,23 @@ static const QString visibilityFragShader      = SHADER_DIR + "visibilityShader.
 static const QString depthVisualizerVertShader = SHADER_DIR + "depthVisualizer.vert";
 static const QString depthVisualizerFragShader = SHADER_DIR + "depthVisualizer.frag";
 
-class SmoothingCallback: public osgDB::Registry::ReadFileCallback
-{
-public:
-    virtual osgDB::ReaderWriter::ReadResult  readNode(const std::string &fileName, const osgDB::ReaderWriter::Options *options) override
-    {
-        osgDB::ReaderWriter::ReadResult  result     = osgDB::Registry::instance()->readNodeImplementation(fileName, options);
-        osg::Node                       *loadedNode = result.getNode();
+// class SmoothingCallback: public osgDB::Registry::ReadFileCallback
+// {
+// public:
+//     virtual osgDB::ReaderWriter::ReadResult  readNode(const std::string &fileName, const osgDB::ReaderWriter::Options *options) override
+//     {
+//         osgDB::ReaderWriter::ReadResult  result     = osgDB::Registry::instance()->readNodeImplementation(fileName, options);
+//         osg::Node                       *loadedNode = result.getNode();
 
-        if (loadedNode)
-        {
-            osgUtil::SmoothingVisitor  smoothing;
-            loadedNode->accept(smoothing);
-        }
+//         if (loadedNode)
+//         {
+//             osgUtil::SmoothingVisitor  smoothing;
+//             loadedNode->accept(smoothing);
+//         }
 
-        return result;
-    }
-};
-
-static osg::Vec4  colorToVec(const QColor &color)
-{
-    return osg::Vec4(color.redF(), color.greenF(), color.blueF(), color.alphaF());
-}
+//         return result;
+//     }
+// };
 
 static osg::ref_ptr<osg::Program>  generateShader(const QString &vertFile, const QString &fragFile, QString geomFile = "")
 {
@@ -102,75 +99,17 @@ static osg::ref_ptr<osg::Program>  generateShader(const QString &vertFile, const
 }
 
 VisibilityTestArea::VisibilityTestArea(osg::Group* sceneRoot, osgViewer::Viewer* viewer,osg::Vec3 lightSource, int radius):
-    // _shadowedScene(sceneRoot),
+    _shadowedScene(sceneRoot),
     _mainViewer(viewer),
     _lightSource(lightSource),
     _viweingRadius(radius)
 {
+        // _parentScene = new osg::Group;
+        // _shadowedScene = new osg::Group;
+        // _parentScene->addChild(_shadowedScene);
+        // _mainViewer->getSceneData()->asGroup()->addChild(_parentScene);
 
-        _parentScene = new osg::Group;
-        _shadowedScene = new osg::Group;
-        _parentScene->addChild(_shadowedScene);
-        _mainViewer->getSceneData()->asGroup()->addChild(_parentScene);
-
-        const float halfSize = 200.0f;   // 200 width
-        const int gridSize = 50;          // resolution
-        const float maxHeight = 50.0f;    // elevation at origin
-
-        osg::ref_ptr<osg::Geometry> geom = new osg::Geometry();
-        osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array();
-        osg::ref_ptr<osg::Vec3Array> normals = new osg::Vec3Array();
-
-        float step = (halfSize * 2.0f) / gridSize;
-
-        // Generate vertices
-        for (int y = 0; y <= gridSize; ++y)
-        {
-            for (int x = 0; x <= gridSize; ++x)
-            {
-                float px = -halfSize + x * step;
-                float py = -halfSize + y * step;
-
-                float dist = std::sqrt(px * px + py * py);
-                float height = maxHeight * std::exp(-(dist * dist) / 2000.0f);
-
-                vertices->push_back(osg::Vec3(px, py, height));
-                normals->push_back(osg::Vec3(0.0f, 0.0f, 1.0f));
-            }
-        }
-
-        geom->setVertexArray(vertices.get());
-        geom->setNormalArray(normals.get(), osg::Array::BIND_PER_VERTEX);
-
-        // Create triangle strips
-        for (int y = 0; y < gridSize; ++y)
-        {
-            osg::ref_ptr<osg::DrawElementsUInt> strip =
-                new osg::DrawElementsUInt(GL_TRIANGLE_STRIP);
-
-            for (int x = 0; x <= gridSize; ++x)
-            {
-                strip->push_back((y + 1) * (gridSize + 1) + x);
-                strip->push_back(y * (gridSize + 1) + x);
-            }
-            geom->addPrimitiveSet(strip.get());
-        }
-
-        osg::ref_ptr<osg::Geode> geode = new osg::Geode();
-        geode->addDrawable(geom.get());
-
-        osg::ref_ptr<osg::MatrixTransform> xform =new osg::MatrixTransform();
-
-        xform->addChild(geode.get());
-
-        xform->setMatrix(osg::Matrix::translate(_lightSource));
-
-
-
-        _shadowedScene->addChild(xform);
-
-
-
+        _parentScene = _shadowedScene->getParent(0);
 }
 
 VisibilityTestArea::~VisibilityTestArea()
@@ -178,9 +117,9 @@ VisibilityTestArea::~VisibilityTestArea()
     clear();
 }
 
-osg::MatrixTransform* makeIndicator(osg::Vec3 eye)
+osg::AutoTransform* makeIndicator(osg::Vec3 eye)
 {
-    osg::ref_ptr<osg::Sphere> sphere = new osg::Sphere(osg::Vec3(0.0f, 0.0f, 0.0f), 10.0f);
+    osg::ref_ptr<osg::Sphere> sphere = new osg::Sphere(osg::Vec3(0.0f, 0.0f, 0.0f), 5.0f);
 
     osg::ref_ptr<osg::ShapeDrawable> drawable = new osg::ShapeDrawable(sphere.get());
 
@@ -191,11 +130,13 @@ osg::MatrixTransform* makeIndicator(osg::Vec3 eye)
 
     geode->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
 
-    osg::ref_ptr<osg::MatrixTransform> xform =new osg::MatrixTransform();
+    osg::ref_ptr<osg::AutoTransform> xform = new osg::AutoTransform();
+    xform->setAutoRotateMode(osg::AutoTransform::NO_ROTATION);
+    xform->setAutoScaleToScreen(true);
 
     xform->addChild(geode.get());
 
-    xform->setMatrix(osg::Matrix::translate(eye));
+    xform->setPosition(eye);
 
     return xform.release();
 }
@@ -256,9 +197,7 @@ void VisibilityTestArea::setViwerPosition(const osg::Vec3 position)
 
     if (_lightIndicator.valid())
        {
-           _lightIndicator->setMatrix(
-               osg::Matrix::translate(position)
-           );
+           _lightIndicator->setPosition(position);
        }
 }
 
@@ -269,6 +208,33 @@ void VisibilityTestArea::setRadius(int radius)
         _farPlaneUniform->set(_lightSource.z()+(float)radius);
     }
     else _viweingRadius = radius;
+}
+
+void VisibilityTestArea::setVisibleAreaColor(const osg::Vec4 color)
+{
+    if(_visibleColorUniform.valid()){
+        _visibleColorUniform->set(color);
+    }
+    else visibleColor = color;
+}
+
+void VisibilityTestArea::setInvisibleAreaColor(const osg::Vec4 color)
+{
+    if(_invisibleColorUniform.valid()){
+        _invisibleColorUniform->set(color);
+    }
+    else invisibleColor = color;
+}
+
+void VisibilityTestArea::setVerticalFOV(int fov)
+{
+    _verticalFOV = fov;
+    osg::Matrix               shadowProj = osg::Matrix::perspective(_verticalFOV, SM_TEXTURE_WIDTH / SM_TEXTURE_WIDTH, near_plane, far_plane);
+    for (int i = 0; i < 6; i++)
+    {
+        _depthCameras[i]->setProjectionMatrix(shadowProj);
+    }
+    
 }
 
 void  VisibilityTestArea::updateAttributes()
@@ -343,7 +309,6 @@ void  VisibilityTestArea::buildModel()
     if (!depthShader.valid())
     {
         osg::notify(osg::WARN) << "Failed to load depth shader" << std::endl;
-        // clear();
         return;
     }
 
@@ -352,33 +317,35 @@ void  VisibilityTestArea::buildModel()
     if (!_visibilityShader.valid())
     {
         osg::notify(osg::WARN) << "Failed to load visibility shader" << std::endl;
-        clear();
-
         return;
     }
 
     // Light source in shader
-    float                     near_plane = 0.5f;
-    float                     far_plane  = _lightSource.z()+(float)_viweingRadius;
+    far_plane  = _lightSource.z()+(float)_viweingRadius;
 
     _lightPosUniform = new osg::Uniform("lightPos", _lightSource);
     _viewRadiusUniform = new osg::Uniform("user_area", (float)_viweingRadius);
     _farPlaneUniform = new osg::Uniform("far_plane",far_plane);
     _nearPlaneUniform = new osg::Uniform("near_plane", near_plane);
-    osg::Matrix               shadowProj = osg::Matrix::perspective(90.0, SM_TEXTURE_WIDTH / SM_TEXTURE_WIDTH, near_plane, far_plane);
 
+    _visibleColorUniform = new osg::Uniform("visibleColor", visibleColor);
+    _invisibleColorUniform = new osg::Uniform("invisibleColor", invisibleColor);
+
+    _baseTextureUniform = new osg::Uniform("baseTexture", 0);
+    _shadowMapUniform = new osg::Uniform("shadowMap", 1);
+
+     // Generate shadow map cameras and corresponding textures
+    osg::Matrix  shadowProj = osg::Matrix::perspective(_verticalFOV, SM_TEXTURE_WIDTH / SM_TEXTURE_WIDTH, near_plane, far_plane);
 
     // Generate one camera for each side of the shadow cubemap
     for (int i = 0; i < 6; i++)
     {
         _depthCameras[i] = generateCubeCamera(depthMap, i, osg::Camera::DEPTH_BUFFER);
-
         _depthCameras[i]->setProjectionMatrix(shadowProj);
         _depthCameras[i]->getOrCreateStateSet()->setAttribute(depthShader, osg::StateAttribute::ON);
         _depthCameras[i]->getOrCreateStateSet()->addUniform(_lightPosUniform);
         _depthCameras[i]->getOrCreateStateSet()->addUniform(_farPlaneUniform);
         _depthCameras[i]->getOrCreateStateSet()->addUniform(_nearPlaneUniform);
-
 
         _depthCameras[i]->addChild(_shadowedScene);
         _parentScene->addChild(_depthCameras[i]);
@@ -386,17 +353,16 @@ void  VisibilityTestArea::buildModel()
 
     _parentScene->getOrCreateStateSet()->setTextureAttributeAndModes(1, depthMap, osg::StateAttribute::ON);
     _parentScene->getOrCreateStateSet()->setAttribute(_visibilityShader, osg::StateAttribute::ON);
-    _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("baseTexture", 0));
-    _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("shadowMap", 1));
-    _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("visibleColor", colorToVec(visibleColor)));
-    _parentScene->getOrCreateStateSet()->addUniform(new osg::Uniform("invisibleColor", colorToVec(invisibleColor)));
+    _parentScene->getOrCreateStateSet()->addUniform(_baseTextureUniform);
+    _parentScene->getOrCreateStateSet()->addUniform(_shadowMapUniform);
+    _parentScene->getOrCreateStateSet()->addUniform(_visibleColorUniform);
+    _parentScene->getOrCreateStateSet()->addUniform(_invisibleColorUniform);
 
     // Update light source info for shadowing scene
     _parentScene->getOrCreateStateSet()->addUniform(_lightPosUniform);
     _parentScene->getOrCreateStateSet()->addUniform(_farPlaneUniform);
     _parentScene->getOrCreateStateSet()->addUniform(_nearPlaneUniform);
     _parentScene->getOrCreateStateSet()->addUniform(_viewRadiusUniform);
-
 
     _lightIndicator = makeIndicator(_lightSource);
     _parentScene->getParent(0)->addChild(_lightIndicator);
@@ -414,17 +380,23 @@ void  VisibilityTestArea::clear()
         _depthCameras[i]->getOrCreateStateSet()->removeUniform(_farPlaneUniform);
         _depthCameras[i]->getOrCreateStateSet()->removeUniform(_nearPlaneUniform);
         _depthCameras[i]->getOrCreateStateSet()->removeUniform(_inverseViewUniform[i]);
-
         _depthCameras[i]->removeChild(_shadowedScene);
         _parentScene->removeChild(_depthCameras[i]);
     }
 
+    _parentScene->getOrCreateStateSet()->removeUniform(_visibleColorUniform);
+    _parentScene->getOrCreateStateSet()->removeUniform(_invisibleColorUniform);
     _parentScene->getOrCreateStateSet()->removeUniform(_lightPosUniform);
     _parentScene->getOrCreateStateSet()->removeUniform(_farPlaneUniform);
     _parentScene->getOrCreateStateSet()->removeUniform(_nearPlaneUniform);
     _parentScene->getOrCreateStateSet()->removeUniform(_viewRadiusUniform);
+    _parentScene->getOrCreateStateSet()->removeUniform(_baseTextureUniform);
+    _parentScene->getOrCreateStateSet()->removeUniform(_shadowMapUniform);
 
-
+    _parentScene->getOrCreateStateSet()->setAttribute(_visibilityShader, osg::StateAttribute::OFF);
+    _parentScene->getOrCreateStateSet()->setTextureAttributeAndModes(1, depthMap, osg::StateAttribute::OFF);
+    _parentScene->getOrCreateStateSet()->removeAttribute(osg::StateAttribute::PROGRAM);
+    _parentScene->getOrCreateStateSet()->removeTextureAttribute(1, osg::StateAttribute::TEXTURE);
 
     _parentScene->removeChild(_shadowedScene);
     _parentScene->getParent(0)->removeChild(_lightIndicator);
