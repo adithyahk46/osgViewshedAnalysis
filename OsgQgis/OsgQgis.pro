@@ -5,8 +5,14 @@ QT += opengl openglwidgets xml
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
 CONFIG += c++17
+
+CONFIG += console
+CONFIG -= windows
+
 DEFINES += CPL_DEBUG=1
+DEFINES += OSG_NOTIFY_LEVEL=DEBUG_INFO
 DEFINES += OSGEARTH_NOTIFY_LEVEL=INFO
+DEFINES += NOMINMAX
 
 # Define a macro that the C++ code can see
 DEFINES += SOURCE_PATH=\\\"$$PWD\\\"
@@ -69,6 +75,7 @@ SOURCES += \
 
 HEADERS += \
     ViewshedAreaAnalysisWidget.h \
+    VisibilityTestArea/ViewshedShaders.h \
     VisibilityTestArea/VisibilityTestArea.h \
     XYZCoordinateAxes.h \
     mainwindow.h

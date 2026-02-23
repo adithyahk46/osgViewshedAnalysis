@@ -39,7 +39,6 @@ public:
     void updateAttributes();
 
 protected:
-    void generateTestSphere(osg::ref_ptr<osg::TextureCubeMap> depthMap, osg::ref_ptr<osg::TextureCubeMap> colorMap);
     osg::Camera* generateCubeCamera(osg::ref_ptr<osg::TextureCubeMap> cubeMap, unsigned face, osg::Camera::BufferComponent component);
 
 private:
@@ -69,7 +68,7 @@ private:
     int _horizontalFOV = 90;
 
     float near_plane = 0.5f;
-    float far_plane ;;
+    float far_plane ;
 
 
     osg::Vec4  visibleColor   = osg::Vec4(159.0f / 255.0f, 255.0f / 255.0f, 61.0f / 255.0f, 0.5f);

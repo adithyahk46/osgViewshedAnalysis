@@ -14,87 +14,42 @@
 
 #include <osg/AutoTransform>
 
+
+#include "ViewshedShaders.h"
+
 enum TraversalOption
 {
     INTERSECT_IGNORE = 0x00000004,
     TRAVERSAL_IGNORE = 0x00000010
 };
 
-
-
 static const int   SM_TEXTURE_WIDTH  = 1024;
 static const bool  SHOW_DEBUG_CAMERA = false;
-static const QString SHADER_DIR =
-    "C:/Users/pnmt1054/Adithya_working_directory/QT_PROJECTS/osgViewshedAnalysis/OsgQgis/VisibilityTestArea/";
 
-static const QString depthMapVertShader        = SHADER_DIR + "depthMap.vert";
-static const QString depthMapFragShader        = SHADER_DIR + "depthMap.frag";
-static const QString visibilityVertShader      = SHADER_DIR + "visibilityShader.vert";
-static const QString visibilityFragShader      = SHADER_DIR + "visibilityShader.frag";
-static const QString depthVisualizerVertShader = SHADER_DIR + "depthVisualizer.vert";
-static const QString depthVisualizerFragShader = SHADER_DIR + "depthVisualizer.frag";
-
-// class SmoothingCallback: public osgDB::Registry::ReadFileCallback
-// {
-// public:
-//     virtual osgDB::ReaderWriter::ReadResult  readNode(const std::string &fileName, const osgDB::ReaderWriter::Options *options) override
-//     {
-//         osgDB::ReaderWriter::ReadResult  result     = osgDB::Registry::instance()->readNodeImplementation(fileName, options);
-//         osg::Node                       *loadedNode = result.getNode();
-
-//         if (loadedNode)
-//         {
-//             osgUtil::SmoothingVisitor  smoothing;
-//             loadedNode->accept(smoothing);
-//         }
-
-//         return result;
-//     }
-// };
-
-static osg::ref_ptr<osg::Program>  generateShader(const QString &vertFile, const QString &fragFile, QString geomFile = "")
+static osg::ref_ptr<osg::Program>  generateShader(const std::string &vertSource, const std::string &fragSource, std::string geomSource = "")
 {
     osg::ref_ptr<osg::Program>  program = new osg::Program;
 
-    if (!vertFile.isEmpty())
+    if (!vertSource.empty())
     {
         osg::ref_ptr<osg::Shader>  shader = new osg::Shader(osg::Shader::VERTEX);
+        shader->setShaderSource(vertSource);
         program->addShader(shader);
-
-        if (!shader->loadShaderSourceFromFile(vertFile.toLocal8Bit().toStdString()))
-        {
-            osg::notify(osg::WARN) << "vertex program load failed" << std::endl;
-
-            return nullptr;
-        }
     }
 
-    if (!fragFile.isEmpty())
+    if (!fragSource.empty())
     {
         osg::ref_ptr<osg::Shader>  shader = new osg::Shader(osg::Shader::FRAGMENT);
+        shader->setShaderSource(fragSource);
         program->addShader(shader);
-
-        if (!shader->loadShaderSourceFromFile(fragFile.toLocal8Bit().toStdString()))
-        {
-            osg::notify(osg::WARN) << "fragment program load failed" << std::endl;
-
-            return nullptr;
-        }
     }
 
-    if (!geomFile.isEmpty())
+    if (!geomSource.empty())
     {
         osg::ref_ptr<osg::Shader>  shader = new osg::Shader(osg::Shader::GEOMETRY);
+        shader->setShaderSource(geomSource);
         program->addShader(shader);
-
-        if (!shader->loadShaderSourceFromFile(geomFile.toLocal8Bit().toStdString()))
-        {
-            osg::notify(osg::WARN) << "geometry program load failed" << std::endl;
-
-            return nullptr;
-        }
     }
-
     return program;
 }
 
@@ -141,35 +96,6 @@ osg::AutoTransform* makeIndicator(osg::Vec3 eye)
     return xform.release();
 }
 
-void  VisibilityTestArea::generateTestSphere(osg::ref_ptr<osg::TextureCubeMap> depthMap, osg::ref_ptr<osg::TextureCubeMap> colorMap)
-{
-    osg::ref_ptr<osg::Program>  depthVisualizer = generateShader(
-        depthVisualizerVertShader,
-        depthVisualizerFragShader);
-
-    debugNode = new osg::PositionAttitudeTransform;
-    debugNode->setPosition(_lightSource);
-    debugNode->setCullingActive(false);
-
-    osg::StateSet *ss = debugNode->getOrCreateStateSet();
-
-    ss->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
-    ss->setTextureAttributeAndModes(0, depthMap, osg::StateAttribute::OVERRIDE | osg::StateAttribute::ON);
-    ss->setTextureAttributeAndModes(1, colorMap, osg::StateAttribute::OVERRIDE | osg::StateAttribute::ON);
-    ss->setAttribute(depthVisualizer, osg::StateAttribute::OVERRIDE | osg::StateAttribute::ON);
-    ss->addUniform(new osg::Uniform("center", _lightSource + osg::Vec3 { 0, 0, 70 }), osg::StateAttribute::OVERRIDE | osg::StateAttribute::ON);
-    ss->addUniform(new osg::Uniform("depthMap", 0), osg::StateAttribute::OVERRIDE | osg::StateAttribute::ON);
-    ss->addUniform(new osg::Uniform("colorMap", 1), osg::StateAttribute::OVERRIDE | osg::StateAttribute::ON);
-
-    osg::ref_ptr<osg::TessellationHints>  tsHint = new osg::TessellationHints;
-    tsHint->setDetailRatio(8.0);
-    osg::ref_ptr<osg::Geode>  geode = new osg::Geode;
-    geode->addDrawable(new osg::ShapeDrawable(new osg::Sphere(_lightSource + osg::Vec3 { 0, 0, 70 }, 50), tsHint));
-
-    debugNode->addChild(geode);
-    _parentScene->addChild(debugNode);
-}
-
 osg::Camera * VisibilityTestArea::generateCubeCamera(osg::ref_ptr<osg::TextureCubeMap> cubeMap, unsigned face, osg::Camera::BufferComponent component)
 {
     osg::ref_ptr<osg::Camera>  camera = new osg::Camera;
@@ -186,7 +112,6 @@ osg::Camera * VisibilityTestArea::generateCubeCamera(osg::ref_ptr<osg::TextureCu
     camera->setNodeMask(0xffffffff & (~INTERSECT_IGNORE));
     return camera.release();
 }
-
 
 void VisibilityTestArea::setViwerPosition(const osg::Vec3 position)
 {
@@ -281,7 +206,6 @@ void  VisibilityTestArea::updateAttributes()
     }
 }
 
-
 void  VisibilityTestArea::buildModel()
 {
     // If shadow exist
@@ -305,7 +229,7 @@ void  VisibilityTestArea::buildModel()
     depthMap->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
 
     // Depth shader that writes unnormaized depth into buffer
-    depthShader = generateShader(depthMapVertShader, depthMapFragShader);
+    depthShader = generateShader(depthMapVert, depthMapFrag);
     if (!depthShader.valid())
     {
         osg::notify(osg::WARN) << "Failed to load depth shader" << std::endl;
@@ -313,7 +237,7 @@ void  VisibilityTestArea::buildModel()
     }
 
     // Render the result in shader
-    _visibilityShader = generateShader(visibilityVertShader, visibilityFragShader);
+    _visibilityShader = generateShader(visibilityShaderVert, visibilityShaderFrag);
     if (!_visibilityShader.valid())
     {
         osg::notify(osg::WARN) << "Failed to load visibility shader" << std::endl;
