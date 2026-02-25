@@ -159,11 +159,11 @@ const char* depthVisualizerFrag = R"(
     const float near_plane = 0.1;
     const float far_plane = 1000.0;
 
-    float LinearizeDepth(float z) 
-    { 
-    	float z_n = 2.0 * z - 1.0; 
-        return 2.0 * near_plane * far_plane / (far_plane + near_plane - z_n * (far_plane - near_plane)); 
-    }; 
+    float LinearizeDepth(float z)
+    {
+        float z_n = 2.0 * z - 1.0;
+        return 2.0 * near_plane * far_plane / (far_plane + near_plane - z_n * (far_plane - near_plane));
+    };
 
     void main()
     {

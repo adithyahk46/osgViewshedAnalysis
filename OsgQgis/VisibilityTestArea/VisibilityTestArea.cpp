@@ -14,8 +14,136 @@
 
 #include <osg/AutoTransform>
 
+// #include "ViewshedShaders.h"
 
-#include "ViewshedShaders.h"
+
+const char* depthMapVertVP = R"(
+    #version 330 core
+
+    //in vec4 gl_Vertex;
+    out float lightDistance;
+
+    uniform mat4 osg_ModelViewProjectionMatrix;
+    uniform mat4 osg_ViewMatrixInverse;
+    uniform mat4 osg_ModelViewMatrix;
+    uniform vec3 lightPos;
+    uniform mat4 inverse_view;
+
+    uniform float near_plane;
+    uniform float far_plane;
+
+    void depthMapVertex(inout vec4 vertex)
+    {
+        // get distance between fragment and light source
+        vec3 worldPos = (inverse_view * osg_ModelViewMatrix * vertex).xyz;
+        lightDistance = length(worldPos - lightPos);
+        lightDistance = ((1 / lightDistance) - (1 / near_plane)) / (1 / far_plane - 1 / near_plane);
+
+        gl_Position = osg_ModelViewProjectionMatrix * vertex;
+    }
+)";
+
+const char* depthMapFragVP = R"(
+    #version 330 core
+    in float lightDistance;
+    uniform float far_plane;
+
+    void depthMapFragment(inout vec4 color)
+    {
+        // Mapping to [0, 1]
+        gl_FragDepth = lightDistance;
+    }
+)";
+
+const char* visibilityShaderVertVP = R"(
+    #version 330 core
+
+    //in vec4 gl_Vertex;
+    //in vec3 gl_Normal;
+    //in vec2 gl_MultiTexCoord0;
+
+    uniform mat4 osg_ModelViewProjectionMatrix;
+    uniform mat4 osg_ViewMatrixInverse;
+    uniform mat4 osg_ModelViewMatrix;
+
+    uniform vec3 lightPos;
+
+    out vec3 worldPos;
+    out vec3 normal;
+    out vec2 texCoords;
+    out float lightDistance;
+
+    void visibilityVertex(inout vec4 vertex)
+    {
+        worldPos = (osg_ViewMatrixInverse * osg_ModelViewMatrix * vertex).xyz;
+        lightDistance = length(worldPos - lightPos);
+
+        normal = normalize( osg_Normal );
+        texCoords = osg_MultiTexCoord0.xy;
+        gl_Position = osg_ModelViewProjectionMatrix * vertex;
+    }
+)";
+
+
+const char* visibilityShaderFragVP = R"(
+    #version 330 core
+    // out vec4 FragColor;
+
+    in vec3 worldPos;
+    in vec3 normal;
+    in vec2 texCoords;
+    in float lightDistance;
+
+    uniform vec3 lightPos;
+    uniform vec4 visibleColor;
+    uniform vec4 invisibleColor;
+
+    uniform sampler2D baseTexture;
+    uniform samplerCube shadowMap;
+
+    uniform float near_plane;
+    uniform float far_plane;
+    uniform float user_area;
+
+    float linearizeDepth(float z)
+    {
+        float z_n = 2.0 * z - 1.0;
+        return 2.0 * near_plane * far_plane / (far_plane + near_plane - z_n * (far_plane - near_plane));
+    };
+
+    // Return 1 for shadowed, 0 visible
+    bool isShadowed(vec3 lightDir)
+    {
+        float bias = max(0.01 * (1.0 - dot(normal, lightDir)), 0.001) * far_plane;
+
+        float z = linearizeDepth(texture(shadowMap, lightDir).r);
+        return lightDistance - bias > z;
+    }
+
+    void visibilityFragment(inout vec4 FragColor)
+    {
+        vec3 baseColor = texture(baseTexture, texCoords).rgb;
+
+        if (length(lightPos.xy - worldPos.xy) > user_area)
+            FragColor = vec4(baseColor, 1.0);
+        else
+        {
+            vec3 lightDir = normalize(lightPos - worldPos);
+            float normDif = max(dot(lightDir, normal), 0.0);
+
+            vec3 lighting;
+            // Render as visible only if it can be seen by light source
+            if (normDif > 0.0 && isShadowed(-lightDir) == false)
+                lighting = visibleColor.rgb * baseColor;
+            else
+                lighting = invisibleColor.rgb * baseColor;
+
+            FragColor = vec4(lighting, 1.0);
+        }
+    }
+)";
+
+
 
 enum TraversalOption
 {
@@ -24,34 +152,8 @@ enum TraversalOption
 };
 
 static const int   SM_TEXTURE_WIDTH  = 1024;
-static const bool  SHOW_DEBUG_CAMERA = false;
 
-static osg::ref_ptr<osg::Program>  generateShader(const std::string &vertSource, const std::string &fragSource, std::string geomSource = "")
-{
-    osg::ref_ptr<osg::Program>  program = new osg::Program;
 
-    if (!vertSource.empty())
-    {
-        osg::ref_ptr<osg::Shader>  shader = new osg::Shader(osg::Shader::VERTEX);
-        shader->setShaderSource(vertSource);
-        program->addShader(shader);
-    }
-
-    if (!fragSource.empty())
-    {
-        osg::ref_ptr<osg::Shader>  shader = new osg::Shader(osg::Shader::FRAGMENT);
-        shader->setShaderSource(fragSource);
-        program->addShader(shader);
-    }
-
-    if (!geomSource.empty())
-    {
-        osg::ref_ptr<osg::Shader>  shader = new osg::Shader(osg::Shader::GEOMETRY);
-        shader->setShaderSource(geomSource);
-        program->addShader(shader);
-    }
-    return program;
-}
 
 VisibilityTestArea::VisibilityTestArea(osg::Group* sceneRoot, osgViewer::Viewer* viewer,osg::Vec3 lightSource, int radius):
     _shadowedScene(sceneRoot),
@@ -59,11 +161,6 @@ VisibilityTestArea::VisibilityTestArea(osg::Group* sceneRoot, osgViewer::Viewer*
     _lightSource(lightSource),
     _viweingRadius(radius)
 {
-        // _parentScene = new osg::Group;
-        // _shadowedScene = new osg::Group;
-        // _parentScene->addChild(_shadowedScene);
-        // _mainViewer->getSceneData()->asGroup()->addChild(_parentScene);
-
         _parentScene = _shadowedScene->getParent(0);
 }
 
@@ -117,7 +214,6 @@ void VisibilityTestArea::setViwerPosition(const osg::Vec3 position)
 {
     _lightSource = position;
     _lightPosUniform->set(_lightSource);
-    _farPlaneUniform->set(_lightSource.z()+(float)_viweingRadius);
     updateAttributes();
 
     if (_lightIndicator.valid())
@@ -130,7 +226,7 @@ void VisibilityTestArea::setRadius(int radius)
 {
     if(_viewRadiusUniform.valid()){
         _viewRadiusUniform->set((float)radius);
-        _farPlaneUniform->set(_lightSource.z()+(float)radius);
+        _farPlaneUniform->set((float)radius+ _farPlanOffSet);
     }
     else _viweingRadius = radius;
 }
@@ -159,7 +255,7 @@ void VisibilityTestArea::setVerticalFOV(int fov)
     {
         _depthCameras[i]->setProjectionMatrix(shadowProj);
     }
-    
+
 }
 
 void  VisibilityTestArea::updateAttributes()
@@ -208,12 +304,6 @@ void  VisibilityTestArea::updateAttributes()
 
 void  VisibilityTestArea::buildModel()
 {
-    // If shadow exist
-    if (!_shadowedScene.valid())
-    {
-        osg::notify(osg::WARN) << "shadow scene is not valid" << std::endl;
-        return;
-    }
 
     _mainViewer->getCamera()->getGraphicsContext()->getState()->setUseModelViewAndProjectionUniforms(true);
 
@@ -228,24 +318,9 @@ void  VisibilityTestArea::buildModel()
     depthMap->setFilter(osg::Texture::MIN_FILTER, osg::Texture::NEAREST);
     depthMap->setFilter(osg::Texture::MAG_FILTER, osg::Texture::NEAREST);
 
-    // Depth shader that writes unnormaized depth into buffer
-    depthShader = generateShader(depthMapVert, depthMapFrag);
-    if (!depthShader.valid())
-    {
-        osg::notify(osg::WARN) << "Failed to load depth shader" << std::endl;
-        return;
-    }
-
-    // Render the result in shader
-    _visibilityShader = generateShader(visibilityShaderVert, visibilityShaderFrag);
-    if (!_visibilityShader.valid())
-    {
-        osg::notify(osg::WARN) << "Failed to load visibility shader" << std::endl;
-        return;
-    }
 
     // Light source in shader
-    far_plane  = _lightSource.z()+(float)_viweingRadius;
+    far_plane  = (float)_viweingRadius + _farPlanOffSet;
 
     _lightPosUniform = new osg::Uniform("lightPos", _lightSource);
     _viewRadiusUniform = new osg::Uniform("user_area", (float)_viweingRadius);
@@ -261,12 +336,17 @@ void  VisibilityTestArea::buildModel()
      // Generate shadow map cameras and corresponding textures
     osg::Matrix  shadowProj = osg::Matrix::perspective(_verticalFOV, SM_TEXTURE_WIDTH / SM_TEXTURE_WIDTH, near_plane, far_plane);
 
+    osgEarth::VirtualProgram* _depthCamerasVP = new osgEarth::VirtualProgram();
+    _depthCamerasVP->setFunction("depthMapVertex",depthMapVertVP,osgEarth::VirtualProgram::LOCATION_VERTEX_MODEL);
+    _depthCamerasVP->setFunction("depthMapFragment",depthMapFragVP,osgEarth::VirtualProgram::LOCATION_FRAGMENT_COLORING);
+    _depthCamerasVP->setShaderLogging(true, "shaders1.txt");
+
     // Generate one camera for each side of the shadow cubemap
     for (int i = 0; i < 6; i++)
     {
         _depthCameras[i] = generateCubeCamera(depthMap, i, osg::Camera::DEPTH_BUFFER);
         _depthCameras[i]->setProjectionMatrix(shadowProj);
-        _depthCameras[i]->getOrCreateStateSet()->setAttribute(depthShader, osg::StateAttribute::ON);
+        // _depthCameras[i]->getOrCreateStateSet()->setAttributeAndModes(_depthCamerasVP, osg::StateAttribute::ON);
         _depthCameras[i]->getOrCreateStateSet()->addUniform(_lightPosUniform);
         _depthCameras[i]->getOrCreateStateSet()->addUniform(_farPlaneUniform);
         _depthCameras[i]->getOrCreateStateSet()->addUniform(_nearPlaneUniform);
@@ -275,8 +355,15 @@ void  VisibilityTestArea::buildModel()
         _parentScene->addChild(_depthCameras[i]);
     }
 
+
     _parentScene->getOrCreateStateSet()->setTextureAttributeAndModes(1, depthMap, osg::StateAttribute::ON);
-    _parentScene->getOrCreateStateSet()->setAttribute(_visibilityShader, osg::StateAttribute::ON);
+
+    osgEarth::VirtualProgram* _visibilityShaderVP = new osgEarth::VirtualProgram();
+    _visibilityShaderVP->setFunction("visibilityVertex",visibilityShaderVertVP,osgEarth::VirtualProgram::LOCATION_VERTEX_MODEL);
+    _visibilityShaderVP->setFunction("visibilityFragment",visibilityShaderFragVP,osgEarth::VirtualProgram::LOCATION_FRAGMENT_COLORING);
+    _visibilityShaderVP->setShaderLogging(true, "shaders2.txt");
+
+    _parentScene->getOrCreateStateSet()->setAttributeAndModes(_visibilityShaderVP, osg::StateAttribute::ON);
     _parentScene->getOrCreateStateSet()->addUniform(_baseTextureUniform);
     _parentScene->getOrCreateStateSet()->addUniform(_shadowMapUniform);
     _parentScene->getOrCreateStateSet()->addUniform(_visibleColorUniform);
@@ -298,59 +385,41 @@ void  VisibilityTestArea::buildModel()
 void  VisibilityTestArea::clear()
 {
     for (int i = 0; i < 6; i++)
-    {
-        _depthCameras[i]->getOrCreateStateSet()->setAttribute(depthShader, osg::StateAttribute::OFF);
-        _depthCameras[i]->getOrCreateStateSet()->removeUniform(_lightPosUniform);
-        _depthCameras[i]->getOrCreateStateSet()->removeUniform(_farPlaneUniform);
-        _depthCameras[i]->getOrCreateStateSet()->removeUniform(_nearPlaneUniform);
-        _depthCameras[i]->getOrCreateStateSet()->removeUniform(_inverseViewUniform[i]);
-        _depthCameras[i]->removeChild(_shadowedScene);
-        _parentScene->removeChild(_depthCameras[i]);
-    }
+       {
+           // _depthCameras[i]->getOrCreateStateSet()->setAttribute(depthShader, osg::StateAttribute::OFF);
+           _depthCameras[i]->getOrCreateStateSet()->removeUniform(_lightPosUniform);
+           _depthCameras[i]->getOrCreateStateSet()->removeUniform(_farPlaneUniform);
+           _depthCameras[i]->getOrCreateStateSet()->removeUniform(_nearPlaneUniform);
+           _depthCameras[i]->getOrCreateStateSet()->removeUniform(_inverseViewUniform[i]);
+           _depthCameras[i]->removeChild(_shadowedScene);
+           _parentScene->removeChild(_depthCameras[i]);
+           _depthCameras[i] = nullptr;
+       }
 
-    _parentScene->getOrCreateStateSet()->removeUniform(_visibleColorUniform);
-    _parentScene->getOrCreateStateSet()->removeUniform(_invisibleColorUniform);
-    _parentScene->getOrCreateStateSet()->removeUniform(_lightPosUniform);
-    _parentScene->getOrCreateStateSet()->removeUniform(_farPlaneUniform);
-    _parentScene->getOrCreateStateSet()->removeUniform(_nearPlaneUniform);
-    _parentScene->getOrCreateStateSet()->removeUniform(_viewRadiusUniform);
-    _parentScene->getOrCreateStateSet()->removeUniform(_baseTextureUniform);
-    _parentScene->getOrCreateStateSet()->removeUniform(_shadowMapUniform);
+       _parentScene->getOrCreateStateSet()->removeUniform(_visibleColorUniform);
+       _parentScene->getOrCreateStateSet()->removeUniform(_invisibleColorUniform);
+       _parentScene->getOrCreateStateSet()->removeUniform(_lightPosUniform);
+       _parentScene->getOrCreateStateSet()->removeUniform(_farPlaneUniform);
+       _parentScene->getOrCreateStateSet()->removeUniform(_nearPlaneUniform);
+       _parentScene->getOrCreateStateSet()->removeUniform(_viewRadiusUniform);
+       _parentScene->getOrCreateStateSet()->removeUniform(_baseTextureUniform);
+       _parentScene->getOrCreateStateSet()->removeUniform(_shadowMapUniform);
 
-    _parentScene->getOrCreateStateSet()->setAttribute(_visibilityShader, osg::StateAttribute::OFF);
-    _parentScene->getOrCreateStateSet()->setTextureAttributeAndModes(1, depthMap, osg::StateAttribute::OFF);
-    _parentScene->getOrCreateStateSet()->removeAttribute(osg::StateAttribute::PROGRAM);
-    _parentScene->getOrCreateStateSet()->removeTextureAttribute(1, osg::StateAttribute::TEXTURE);
+       _parentScene->getOrCreateStateSet()->setAttribute(_visibilityShader, osg::StateAttribute::OFF);
+       _parentScene->getOrCreateStateSet()->setTextureAttributeAndModes(1, depthMap, osg::StateAttribute::OFF);
+       _parentScene->getOrCreateStateSet()->removeAttribute(osg::StateAttribute::PROGRAM);
+       _parentScene->getOrCreateStateSet()->removeTextureAttribute(1, osg::StateAttribute::TEXTURE);
 
-    _parentScene->removeChild(_shadowedScene);
-    _parentScene->getParent(0)->removeChild(_lightIndicator);
+       // _parentScene->removeChild(_shadowedScene);
+       _parentScene->getParent(0)->removeChild(_lightIndicator);
 
-    // _lightIndicator = NULL;
+       _lightIndicator = nullptr;
+       _visibilityShader = nullptr;
 
 
-    // if (SHOW_DEBUG_CAMERA)
-    // {
-    //     for (auto camera : _colorCameras)
-    //     {
-    //         _parentScene->removeChild(camera);
-    //         camera = NULL;
-    //     }
 
-    //     _parentScene->removeChild(debugNode);
-    // }
-
-    // _parentScene->getOrCreateStateSet()->setAttribute(_visibilityShader, osg::StateAttribute::OFF);
-    // _parentScene->getOrCreateStateSet()->removeAttribute(osg::StateAttribute::PROGRAM);
-    // _parentScene->getOrCreateStateSet()->removeTextureAttribute(1, osg::StateAttribute::TEXTURE);
-
-    // osgDB::Registry::instance()->setReadFileCallback(NULL);
-
-    // _mainViewer->getCamera()->getGraphicsContext()->getState()->setUseModelViewAndProjectionUniforms(false);
-
-    // _shadowedScene = NULL;
 
 }
-
 
 
 

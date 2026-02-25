@@ -1,6 +1,5 @@
 ﻿#pragma once
 
-
 #include <QVector>
 
 #include <osg/Vec3>
@@ -11,6 +10,8 @@
 #include <osg/PositionAttitudeTransform>
 #include <osg/Geode>
 #include <osg/MatrixTransform>
+
+#include <osgEarth/VirtualProgram>
 
 namespace osg {
     class PositionAttitudeTransform;
@@ -69,6 +70,7 @@ private:
 
     float near_plane = 0.5f;
     float far_plane ;
+    float _farPlanOffSet = 20.0f;
 
 
     osg::Vec4  visibleColor   = osg::Vec4(159.0f / 255.0f, 255.0f / 255.0f, 61.0f / 255.0f, 0.5f);

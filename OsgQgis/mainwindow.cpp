@@ -304,10 +304,9 @@ void MainWindow::initOsg()
     viewer = osgWidget->getOsgViewer();
     viewer->setThreadingModel(osgViewer::Viewer::SingleThreaded);
 
-    // osgEarth::Util::LogarithmicDepthBuffer ldb;
-    // ldb.install(viewer->getCamera());
-
     root = new osg::Group();
+
+    // Build scene
     initializeScene();
 
     shadowGroup = new osg::Group();
@@ -315,10 +314,111 @@ void MainWindow::initOsg()
 
     root->addChild(shadowGroup);
 
+
+    //---------------------------------------
+    // Shader Program
+    //---------------------------------------
+
+    osg::ref_ptr<osg::Program> program = new osg::Program();
+
+    //---------------------------------------
+    // Vertex Shader
+    //---------------------------------------
+
+    osg::ref_ptr<osg::Shader> vert =
+            new osg::Shader(osg::Shader::VERTEX);
+
+    vert->setShaderSource(
+    "#version 330 core\n"
+
+    "layout(location=0) in vec4 osg_Vertex;\n"
+    "layout(location=1) in vec4 osg_Color;\n"
+    "layout(location=2) in vec4 osg_MultiTexCoord0;\n"
+
+    "out vec4 vColor;\n"
+    "out vec4 vTexCoord0;\n"
+
+    "uniform mat4 osg_ModelViewProjectionMatrix;\n"
+
+    "void main()\n"
+    "{\n"
+    "    gl_Position = osg_ModelViewProjectionMatrix * osg_Vertex;\n"
+    "    vColor = osg_Color;\n"
+    "    vTexCoord0 = osg_MultiTexCoord0;\n"
+    "}\n"
+    );
+
+
+    //---------------------------------------
+    // Fragment Shader
+    //---------------------------------------
+
+    osg::ref_ptr<osg::Shader> frag =
+            new osg::Shader(osg::Shader::FRAGMENT);
+
+    frag->setShaderSource(
+    "#version 330 core\n"
+
+    "in vec4 vColor;\n"
+    "in vec4 vTexCoord0;\n"
+
+    "uniform sampler2D base;\n"
+
+    "out vec4 fragColor;\n"
+
+    "void main()\n"
+    "{\n"
+    "    vec4 tex = textureProj(base, vTexCoord0);\n"
+    "    fragColor = vColor * tex;\n"
+    "    fragColor.a *= 0.5;\n"
+    "}\n"
+    );
+
+
+    //---------------------------------------
+    // Attach shaders
+    //---------------------------------------
+
+    program->addShader(vert);
+    program->addShader(frag);
+
+
+    //---------------------------------------
+    // Apply shader to scene
+    //---------------------------------------
+
+    osg::StateSet* ss = root->getOrCreateStateSet();
+
+    ss->setAttributeAndModes(program, osg::StateAttribute::ON);
+
+
+    //---------------------------------------
+    // Bind texture uniform
+    //---------------------------------------
+
+    ss->addUniform(new osg::Uniform("base", 0));
+
+
+    //---------------------------------------
+    // Enable transparency blending
+    //---------------------------------------
+
+    ss->setMode(GL_BLEND, osg::StateAttribute::ON);
+
+    ss->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
+
+
+    //---------------------------------------
+    // Viewer setup
+    //---------------------------------------
+
     viewer->setSceneData(root.get());
-    viewer->setCameraManipulator(new osgGA::TrackballManipulator());
-    viewer->getCamera()->setClearColor(osg::Vec4(0.1, 0.1, 0.1, 1));
 
+    viewer->setCameraManipulator(
+        new osgGA::TrackballManipulator()
+    );
 
+    viewer->getCamera()->setClearColor(
+        osg::Vec4(0.1,0.1,0.1,1)
+    );
 }
-
