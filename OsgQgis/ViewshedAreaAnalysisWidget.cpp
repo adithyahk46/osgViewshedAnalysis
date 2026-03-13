@@ -128,19 +128,20 @@ void ViewshedAreaAnalysisWidget::on_pb_runORupdate_clicked()
        // visibilityTest->setParameter(observationPoint, visibilityRadius);
        viewShed->buildModel();
 
+
        connect(ui->sb_longitude, &QDoubleSpinBox::valueChanged, this,[this](double value){
-           viewShed->setViwerPosition({(float)value,(float)ui->sb_latitude->value(),(float)ui->sb_altitude->value()});
+           viewShed->setCameraPosition({(float)value,(float)ui->sb_latitude->value(),(float)ui->sb_altitude->value()});
        });
 
        connect(ui->sb_latitude, &QDoubleSpinBox::valueChanged, this,[this](double value){
-           viewShed->setViwerPosition({(float)ui->sb_longitude->value(),(float)value,(float)ui->sb_altitude->value()});
+           viewShed->setCameraPosition({(float)ui->sb_longitude->value(),(float)value,(float)ui->sb_altitude->value()});
        });
        connect(ui->sb_altitude, &QDoubleSpinBox::valueChanged, this,[this](double value){
-           viewShed->setViwerPosition({(float)ui->sb_longitude->value(),(float)ui->sb_latitude->value(),(float)value});
+           viewShed->setCameraPosition({(float)ui->sb_longitude->value(),(float)ui->sb_latitude->value(),(float)value});
        });
 
        connect(ui->sb_distance, &QDoubleSpinBox::valueChanged, this,[this](int value){
-           viewShed->setRadius(value);
+           viewShed->setDistance(value);
        });
 }
 
@@ -152,5 +153,24 @@ osg::Vec4 ViewshedAreaAnalysisWidget::colorToVec(const QColor &color)
 void ViewshedAreaAnalysisWidget::on_sb_verticleAngle_valueChanged(double arg1)
 {
     viewShed->setVerticalFOV((int)arg1);
+}
+
+
+void ViewshedAreaAnalysisWidget::on_sb_horizantalAngle_valueChanged(double arg1)
+{
+    viewShed->setHorizontalFOV((int)arg1);
+}
+
+
+void ViewshedAreaAnalysisWidget::on_sb_roll_valueChanged(double arg1)
+{
+    // Pass both current roll and current pitch to the setter
+    viewShed->setRotation(arg1, osg::Vec3(0.0, 0.0, 1.0));
+}
+
+void ViewshedAreaAnalysisWidget::on_sb_pitch_valueChanged(double arg1)
+{
+    // Pass both current pitch and current roll to the setter
+    viewShed->setRotation(arg1,osg::Vec3(0.0, 1.0, 0.0));
 }
 

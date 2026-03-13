@@ -26,6 +26,75 @@ enum TraversalOption
 static const int   SM_TEXTURE_WIDTH  = 1024;
 static const bool  SHOW_DEBUG_CAMERA = false;
 
+
+
+void VisibilityTestArea::setupDebugHUD()
+{
+    osg::ref_ptr<osg::Camera> hudCamera = new osg::Camera;
+    hudCamera->setProjectionMatrix(osg::Matrix::ortho2D(0, 1280, 0, 720));
+    hudCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
+    hudCamera->setViewMatrix(osg::Matrix::identity());
+    hudCamera->setClearMask(GL_DEPTH_BUFFER_BIT);
+    hudCamera->setRenderOrder(osg::Camera::POST_RENDER);
+    hudCamera->setAllowEventFocus(false);
+    hudCamera->setNodeMask(0xffffffff);
+
+    osg::ref_ptr<osg::Geode> quadGeode = new osg::Geode;
+    osg::ref_ptr<osg::Geometry> quadBoard = osg::createTexturedQuadGeometry(
+        osg::Vec3(50.0f, 50.0f, 0.0f),
+        osg::Vec3(400.0f, 0.0f, 0.0f),
+        osg::Vec3(0.0f, 400.0f, 0.0f)
+    );
+    quadGeode->addDrawable(quadBoard);
+    hudCamera->addChild(quadGeode);
+
+    osg::StateSet* stateset = quadBoard->getOrCreateStateSet();
+    stateset->setTextureAttributeAndModes(0, depthMap.get(), osg::StateAttribute::ON);
+    stateset->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+    stateset->setMode(GL_DEPTH_TEST, osg::StateAttribute::OFF);
+
+    osg::ref_ptr<osg::Program> visualProgram = new osg::Program;
+
+    // Vertex Shader (Core Profile)
+    // Note: osg_Vertex and osg_MultiTexCoord0 are automatically
+    // provided by OSG when using setUseModelViewAndProjectionUniforms(true)
+    const char* vertSource =
+        "#version 150\n"
+        "in vec4 osg_Vertex;\n"
+        "in vec4 osg_MultiTexCoord0;\n"
+        "uniform mat4 osg_ModelViewProjectionMatrix;\n"
+        "out vec2 texCoord;\n"
+        "void main() {\n"
+        "  texCoord = osg_MultiTexCoord0.xy;\n"
+        "  gl_Position = osg_ModelViewProjectionMatrix * osg_Vertex;\n"
+        "}\n";
+
+    // Fragment Shader (Core Profile)
+    const char* fragSource =
+        "#version 150\n"
+        "uniform sampler2D depthMap;\n"
+        "uniform float near;\n"
+        "uniform float far;\n"
+        "in vec2 texCoord;\n"
+        "out vec4 fragColor;\n"
+        "void main() {\n"
+        "  float z = texture(depthMap, texCoord).r;\n"
+        "  // Linearization for better visibility\n"
+        "  float lz = (2.0 * near) / (far + near - z * (far - near));\n"
+        "  fragColor = vec4(vec3(lz), 1.0);\n"
+        "}\n";
+
+    visualProgram->addShader(new osg::Shader(osg::Shader::VERTEX, vertSource));
+    visualProgram->addShader(new osg::Shader(osg::Shader::FRAGMENT, fragSource));
+
+    stateset->setAttributeAndModes(visualProgram, osg::StateAttribute::ON);
+    stateset->addUniform(new osg::Uniform("depthMap", 0));
+    stateset->addUniform(new osg::Uniform("near", (float)near_plane));
+    stateset->addUniform(new osg::Uniform("far", (float)far_plane));
+
+    _parentScene->addChild(hudCamera);
+}
+
 static osg::ref_ptr<osg::Program>  generateShader(const std::string &vertSource, const std::string &fragSource, std::string geomSource = "")
 {
     osg::ref_ptr<osg::Program>  program = new osg::Program;
@@ -96,114 +165,131 @@ osg::AutoTransform* makeIndicator(osg::Vec3 eye)
     return xform.release();
 }
 
-osg::Camera * VisibilityTestArea::generateCubeCamera(osg::ref_ptr<osg::TextureCubeMap> cubeMap, unsigned face, osg::Camera::BufferComponent component)
-{
-    osg::ref_ptr<osg::Camera>  camera = new osg::Camera;
+osg::ref_ptr<osg::MatrixTransform> createFrustumNode(osg::Camera* camera, float near_p, float far_p) {
+    // 1. Extract 'top' and 'right' from the camera's existing projection matrix
+    // Since you set it using osg::Matrix::frustum(-right, right, -top, top, near, far)
+    osg::Matrix proj = camera->getProjectionMatrix();
 
-    camera->setClearMask(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+    // In a standard frustum matrix:
+    // proj(0,0) = near / right
+    // proj(1,1) = near / top
+    double right = near_p / proj(0,0);
+    double top = near_p / proj(1,1);
+    double ratio = (double)far_p / (double)near_p;
+    double fTop = top * ratio;
+    double fRight = right * ratio;
 
-    camera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
-    camera->setRenderOrder(osg::Camera::PRE_RENDER);
-    camera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
-    camera->setViewport(0, 0, SM_TEXTURE_WIDTH, SM_TEXTURE_WIDTH);
-    camera->getOrCreateStateSet()->setMode(GL_DEPTH_TEST, osg::StateAttribute::ON);
-    camera->attach(component, cubeMap, 0, face);
+    // 2. Create Vertices in Local Space (Camera at 0,0,0 looking at -Z)
+    osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array(8);
+    // Near Plane
+    (*vertices)[0].set(-right, -top, -near_p);
+    (*vertices)[1].set( right, -top, -near_p);
+    (*vertices)[2].set( right,  top, -near_p);
+    (*vertices)[3].set(-right,  top, -near_p);
+    // Far Plane
+    (*vertices)[4].set(-fRight, -fTop, -far_p);
+    (*vertices)[5].set( fRight, -fTop, -far_p);
+    (*vertices)[6].set( fRight,  fTop, -far_p);
+    (*vertices)[7].set(-fRight,  fTop, -far_p);
 
-    camera->setNodeMask(0xffffffff & (~INTERSECT_IGNORE));
-    return camera.release();
+    // 3. Create Geometry
+    osg::ref_ptr<osg::Geometry> geom = new osg::Geometry;
+    geom->setVertexArray(vertices);
+
+    osg::ref_ptr<osg::DrawElementsUInt> indices = new osg::DrawElementsUInt(GL_LINES);
+    // Near Square
+    indices->push_back(0); indices->push_back(1); indices->push_back(1); indices->push_back(2);
+    indices->push_back(2); indices->push_back(3); indices->push_back(3); indices->push_back(0);
+    // Far Square
+    indices->push_back(4); indices->push_back(5); indices->push_back(5); indices->push_back(6);
+    indices->push_back(6); indices->push_back(7); indices->push_back(7); indices->push_back(4);
+    // Connecting Lines
+    indices->push_back(0); indices->push_back(4); indices->push_back(1); indices->push_back(5);
+    indices->push_back(2); indices->push_back(6); indices->push_back(3); indices->push_back(7);
+    geom->addPrimitiveSet(indices);
+
+    // 4. Wrap in Geode and MatrixTransform
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode;
+    geode->addDrawable(geom);
+    geode->getOrCreateStateSet()->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
+
+    osg::ref_ptr<osg::MatrixTransform> xform = new osg::MatrixTransform;
+    xform->addChild(geode);
+
+    // Set initial position based on camera's current view
+    xform->setMatrix(osg::Matrix::inverse(camera->getViewMatrix()));
+
+    return xform;
 }
 
-void VisibilityTestArea::setViwerPosition(const osg::Vec3 position)
-{
-    _lightSource = position;
-    _lightPosUniform->set(_lightSource);
-    _farPlaneUniform->set(_lightSource.z()+(float)_viweingRadius);
-    updateAttributes();
+void VisibilityTestArea::setUpCamera(){
 
-    if (_lightIndicator.valid())
-       {
-           _lightIndicator->setPosition(position);
-       }
-}
+    _depthCamera = new osg::Camera;
 
-void VisibilityTestArea::setRadius(int radius)
-{
-    if(_viewRadiusUniform.valid()){
-        _viewRadiusUniform->set((float)radius);
-        _farPlaneUniform->set(_lightSource.z()+(float)radius);
-    }
-    else _viweingRadius = radius;
-}
+    _depthCamera->setClearMask(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
-void VisibilityTestArea::setVisibleAreaColor(const osg::Vec4 color)
-{
-    if(_visibleColorUniform.valid()){
-        _visibleColorUniform->set(color);
-    }
-    else visibleColor = color;
-}
+    _depthCamera->setReferenceFrame(osg::Transform::ABSOLUTE_RF);
+    _depthCamera->setRenderOrder(osg::Camera::PRE_RENDER);
+    _depthCamera->setRenderTargetImplementation(osg::Camera::FRAME_BUFFER_OBJECT);
+    _depthCamera->setViewport(0, 0, SM_TEXTURE_WIDTH, SM_TEXTURE_WIDTH);
+    _depthCamera->getOrCreateStateSet()->setMode(GL_DEPTH_TEST, osg::StateAttribute::ON);
+    _depthCamera->attach(osg::Camera::DEPTH_BUFFER, depthMap);
 
-void VisibilityTestArea::setInvisibleAreaColor(const osg::Vec4 color)
-{
-    if(_invisibleColorUniform.valid()){
-        _invisibleColorUniform->set(color);
-    }
-    else invisibleColor = color;
-}
+    _depthCamera->setNodeMask(0xffffffff & (~INTERSECT_IGNORE));
+    // Generate shadow map cameras and corresponding textures
+   // osg::Matrix  shadowProj = osg::Matrix::perspective(_verticalFOV, SM_TEXTURE_WIDTH / SM_TEXTURE_WIDTH, near_plane, far_plane);
 
-void VisibilityTestArea::setVerticalFOV(int fov)
-{
-    _verticalFOV = fov;
-    osg::Matrix               shadowProj = osg::Matrix::perspective(_verticalFOV, SM_TEXTURE_WIDTH / SM_TEXTURE_WIDTH, near_plane, far_plane);
-    for (int i = 0; i < 6; i++)
-    {
-        _depthCameras[i]->setProjectionMatrix(shadowProj);
-    }
-    
-}
+   double vFovRad = osg::DegreesToRadians((double)_verticalFOV);
+   double hFovRad = osg::DegreesToRadians((double)_horizontalFOV);
 
-void  VisibilityTestArea::updateAttributes()
-{
-    // Light source info
-    osg::Vec3  lightPos = _lightSource;
+   double top = near_plane * tan(vFovRad / 2.0);
+   double right = near_plane * tan(hFovRad / 2.0);
 
-    std::vector<osg::Matrix>  shadowViews;
-    shadowViews.push_back(
-        osg::Matrix::lookAt(lightPos, lightPos + osg::Vec3(1.0, 0.0, 0.0), osg::Vec3(0.0, -1.0, 0.0)));
-    shadowViews.push_back(
-        osg::Matrix::lookAt(lightPos, lightPos + osg::Vec3(-1.0, 0.0, 0.0), osg::Vec3(0.0, -1.0, 0.0)));
-    shadowViews.push_back(
-        osg::Matrix::lookAt(lightPos, lightPos + osg::Vec3(0.0, 1.0, 0.0), osg::Vec3(0.0, 0.0, 1.0)));
-    shadowViews.push_back(
-        osg::Matrix::lookAt(lightPos, lightPos + osg::Vec3(0.0, -1.0, 0.0), osg::Vec3(0.0, 0.0, -1.0)));
-    shadowViews.push_back(
-        osg::Matrix::lookAt(lightPos, lightPos + osg::Vec3(0.0, 0.0, 1.0), osg::Vec3(0.0, -1.0, 0.0)));
-    shadowViews.push_back(
-        osg::Matrix::lookAt(lightPos, lightPos + osg::Vec3(0.0, 0.0, -1.0), osg::Vec3(0.0, -1.0, 0.0)));
+   osg::Matrix shadowProj = osg::Matrix::frustum(-right, right,-top, top, near_plane, far_plane);
 
-    // Update light source info for shadow map
-    for (int i = 0; i < 6; i++)
-    {
-        auto  depthCamera = _depthCameras[i];
-        depthCamera->setViewMatrix(shadowViews[i]);
-    }
+   _depthCamera->setProjectionMatrix(shadowProj);
+   _depthCamera->getOrCreateStateSet()->setAttribute(depthShader, osg::StateAttribute::ON);
+   _depthCamera->getOrCreateStateSet()->addUniform(_lightPosUniform);
+   _depthCamera->getOrCreateStateSet()->addUniform(_farPlaneUniform);
+   _depthCamera->getOrCreateStateSet()->addUniform(_nearPlaneUniform);
 
-    if(!_inverseViewUniform[0].valid())
-    {
-        for (int i = 0; i < 6; i++){
-            _inverseViewUniform[i] = new osg::Uniform("inverse_view", osg::Matrixf::inverse(shadowViews[i]));
-        }
-        for (int i = 0; i < 6; i++)
-        {
-            auto  depthCamera = _depthCameras[i];
-            depthCamera->getOrCreateStateSet()->addUniform(_inverseViewUniform[i]);
-        }
-    }
-    else{
-        for (int i = 0; i < 6; i++){
-            _inverseViewUniform[i]->set(osg::Matrixf::inverse(shadowViews[i]));
-        }
-    }
+   _depthCamera->addChild(_shadowedScene);
+   _parentScene->addChild(_depthCamera);
+
+   _lightIndicator = makeIndicator(_lightSource);
+   _parentScene->getParent(0)->addChild(_lightIndicator);
+
+   frustumVisual = createFrustumNode(_depthCamera.get(), near_plane, far_plane);
+   _parentScene->getParent(0)->addChild(frustumVisual);
+
+
+   osg::Vec3  lightPos = _lightSource;
+
+   osg::Matrix view =
+       osg::Matrix::lookAt(lightPos, lightPos + osg::Vec3(1.0, 0.0, 0.0), osg::Vec3(0.0, 0.0, 1.0));
+
+   _depthCamera->setViewMatrix(view);
+
+   _inverseViewUniform = new osg::Uniform("inverse_view", osg::Matrixf::inverse(view));
+   _depthCamera->getOrCreateStateSet()->addUniform(_inverseViewUniform);
+
+   _inverseViewUniform->set(osg::Matrixf::inverse(view));
+
+   osg::Matrix worldMatrix = osg::Matrix::inverse(_depthCamera->getViewMatrix());
+   frustumVisual->setMatrix(worldMatrix);
+
+
+   // Create a Bias Matrix (maps -1->1 to 0->1)
+   osg::Matrix biasMatrix = osg::Matrix::translate(1.0, 1.0, 1.0) * osg::Matrix::scale(0.5, 0.5, 0.5);
+
+   // Get the Camera's View and Projection
+   osg::Matrix view1 = _depthCamera->getViewMatrix();
+   osg::Matrix proj = _depthCamera->getProjectionMatrix();
+
+   // Combine them: VP = View * Projection * Bias
+   osg::Matrix viewProjectionBias = view1 * proj * biasMatrix;
+
+   _cameraVPUniform->set(viewProjectionBias);
 }
 
 void  VisibilityTestArea::buildModel()
@@ -217,7 +303,7 @@ void  VisibilityTestArea::buildModel()
 
     _mainViewer->getCamera()->getGraphicsContext()->getState()->setUseModelViewAndProjectionUniforms(true);
 
-    depthMap = new osg::TextureCubeMap;
+    depthMap = new osg::Texture2D;
     depthMap->setTextureSize(SM_TEXTURE_WIDTH, SM_TEXTURE_WIDTH);
     depthMap->setInternalFormat(GL_DEPTH_COMPONENT);
     depthMap->setSourceFormat(GL_DEPTH_COMPONENT);
@@ -245,7 +331,7 @@ void  VisibilityTestArea::buildModel()
     }
 
     // Light source in shader
-    far_plane  = _lightSource.z()+(float)_viweingRadius;
+    far_plane  = (float)_viweingRadius + farPlaneOffset;
 
     _lightPosUniform = new osg::Uniform("lightPos", _lightSource);
     _viewRadiusUniform = new osg::Uniform("user_area", (float)_viweingRadius);
@@ -258,22 +344,11 @@ void  VisibilityTestArea::buildModel()
     _baseTextureUniform = new osg::Uniform("baseTexture", 0);
     _shadowMapUniform = new osg::Uniform("shadowMap", 1);
 
-     // Generate shadow map cameras and corresponding textures
-    osg::Matrix  shadowProj = osg::Matrix::perspective(_verticalFOV, SM_TEXTURE_WIDTH / SM_TEXTURE_WIDTH, near_plane, far_plane);
+    _cameraVPUniform = new osg::Uniform("cameraVP", osg::Matrixf());
 
-    // Generate one camera for each side of the shadow cubemap
-    for (int i = 0; i < 6; i++)
-    {
-        _depthCameras[i] = generateCubeCamera(depthMap, i, osg::Camera::DEPTH_BUFFER);
-        _depthCameras[i]->setProjectionMatrix(shadowProj);
-        _depthCameras[i]->getOrCreateStateSet()->setAttribute(depthShader, osg::StateAttribute::ON);
-        _depthCameras[i]->getOrCreateStateSet()->addUniform(_lightPosUniform);
-        _depthCameras[i]->getOrCreateStateSet()->addUniform(_farPlaneUniform);
-        _depthCameras[i]->getOrCreateStateSet()->addUniform(_nearPlaneUniform);
 
-        _depthCameras[i]->addChild(_shadowedScene);
-        _parentScene->addChild(_depthCameras[i]);
-    }
+    setUpCamera();
+
 
     _parentScene->getOrCreateStateSet()->setTextureAttributeAndModes(1, depthMap, osg::StateAttribute::ON);
     _parentScene->getOrCreateStateSet()->setAttribute(_visibilityShader, osg::StateAttribute::ON);
@@ -287,25 +362,216 @@ void  VisibilityTestArea::buildModel()
     _parentScene->getOrCreateStateSet()->addUniform(_farPlaneUniform);
     _parentScene->getOrCreateStateSet()->addUniform(_nearPlaneUniform);
     _parentScene->getOrCreateStateSet()->addUniform(_viewRadiusUniform);
-
-    _lightIndicator = makeIndicator(_lightSource);
-    _parentScene->getParent(0)->addChild(_lightIndicator);
+    _parentScene->getOrCreateStateSet()->addUniform(_cameraVPUniform);
 
 
-    updateAttributes();
+    setupDebugHUD();
+
+}
+
+void VisibilityTestArea::setCameraPosition(const osg::Vec3 pos)
+{
+    if(!_depthCamera.valid()) return;
+
+    _lightSource = pos;
+    _lightPosUniform->set(_lightSource);
+
+    if (_lightIndicator.valid()) _lightIndicator->setPosition(_lightSource);
+
+    osg::Vec3  lightPos = _lightSource;
+
+    {
+        osg::Vec3f pos, dir, up;
+        _depthCamera->getViewMatrix().getLookAt(pos,dir,up);
+        osg::Matrix view =
+            osg::Matrix::lookAt(lightPos, lightPos + (dir-pos), osg::Vec3(0.0, 0.0, 1.0));
+        _depthCamera->setViewMatrix(view);
+
+        if(!_inverseViewUniform.valid())
+        {
+                _inverseViewUniform = new osg::Uniform("inverse_view", osg::Matrixf::inverse(view));
+                _depthCamera->getOrCreateStateSet()->addUniform(_inverseViewUniform);
+        }
+        else{
+                _inverseViewUniform->set(osg::Matrixf::inverse(view));
+        }
+
+    }
+
+
+    osg::Matrix worldMatrix = osg::Matrix::inverse(_depthCamera->getViewMatrix());
+    frustumVisual->setMatrix(worldMatrix);
+
+
+    // Create a Bias Matrix (maps -1->1 to 0->1)
+    osg::Matrix biasMatrix = osg::Matrix::translate(1.0, 1.0, 1.0) * osg::Matrix::scale(0.5, 0.5, 0.5);
+
+    // Get the Camera's View and Projection
+    osg::Matrix view1 = _depthCamera->getViewMatrix();
+    osg::Matrix proj = _depthCamera->getProjectionMatrix();
+
+    // Combine them: VP = View * Projection * Bias
+    osg::Matrix viewProjectionBias = view1 * proj * biasMatrix;
+
+    _cameraVPUniform->set(viewProjectionBias);
+
+    // osg::Vec3f pos, dir, up;
+    // _depthCamera->getViewMatrix().getLookAt(pos,dir,up);
+
+    // // qDebug()<<"Position = " << pos.x() <<" " <<pos.y()<<" "<<pos.z();
+    // qDebug()<<"Direction = " << dir.x() <<" " <<dir.y()<<" "<<dir.z();
+    // qDebug()<<"Up = " << up.x() <<" " <<up.y()<<" "<<up.z();
+}
+
+void VisibilityTestArea::setRotation(double angle, const osg::Vec3 axis)
+{
+    if (!_depthCamera) return;
+
+    // 1. Convert to radians
+    double radians = osg::DegreesToRadians(angle);
+
+    // 2. Define your CONSTANT base vectors (Forward: +X, Up: +Z)
+    osg::Vec3 eye = _lightSource;
+    osg::Vec3 lookDir(1.0, 0.0, 0.0);
+    osg::Vec3 upVec(0.0, 0.0, 1.0);
+
+    // 3. Create the rotation matrix
+    osg::Matrixd rotationMatrix = osg::Matrixd::rotate(radians, axis);
+
+    // 4. Transform the LOOK and UP vectors by the rotation
+    // This rotates the "eyesight" without moving the "eye"
+    osg::Vec3 rotatedLookDir = rotationMatrix.postMult(lookDir);
+    osg::Vec3 rotatedUpVec = rotationMatrix.postMult(upVec);
+
+    // 5. Rebuild the View Matrix at the same position
+    osg::Matrixd newView = osg::Matrixd::lookAt(eye, eye + rotatedLookDir, rotatedUpVec);
+    _depthCamera->setViewMatrix(newView);
+
+    // 6. Update the frustum visualizer
+    osg::Matrix worldMatrix = osg::Matrix::inverse(newView);
+    frustumVisual->setMatrix(worldMatrix);
+
+    // 7. Sync the shader uniform
+    if(_inverseViewUniform.valid()) {
+        _inverseViewUniform->set(osg::Matrixf(worldMatrix));
+    }
+
+
+    // Create a Bias Matrix (maps -1->1 to 0->1)
+    osg::Matrix biasMatrix = osg::Matrix::translate(1.0, 1.0, 1.0) * osg::Matrix::scale(0.5, 0.5, 0.5);
+
+    // Get the Camera's View and Projection
+    osg::Matrix view1 = _depthCamera->getViewMatrix();
+    osg::Matrix proj = _depthCamera->getProjectionMatrix();
+
+    // Combine them: VP = View * Projection * Bias
+    osg::Matrix viewProjectionBias = view1 * proj * biasMatrix;
+
+    _cameraVPUniform->set(viewProjectionBias);
+
+    // osg::Vec3f pos, dir, up;
+    // _depthCamera->getViewMatrix().getLookAt(pos,dir,up);
+
+    // qDebug()<<"Position = " << pos.x() <<" " <<pos.y()<<" "<<pos.z();
+    // qDebug()<<"Direction = " << dir.x() <<" " <<dir.y()<<" "<<dir.z();
+    // qDebug()<<"Up = " << up.x() <<" " <<up.y()<<" "<<up.z();
+
+
+
+}
+
+void VisibilityTestArea::setDistance(int distance)
+{
+    _viweingRadius = distance;
+    far_plane= farPlaneOffset+(float)_viweingRadius;
+
+    if(_viewRadiusUniform.valid()){
+        _viewRadiusUniform->set((float)_viweingRadius);
+        _farPlaneUniform->set(far_plane);
+    }
+
+    updateProjectionMatrix();
+}
+
+void VisibilityTestArea::setVerticalFOV(int angle)
+{
+    _verticalFOV = angle;
+    updateProjectionMatrix();
+
+}
+
+void VisibilityTestArea::setHorizontalFOV(int angle)
+{
+    _horizontalFOV = angle;
+    updateProjectionMatrix();
+}
+
+void VisibilityTestArea::setVisibleAreaColor(const osg::Vec4 color)
+{
+    visibleColor = color;
+
+    if(_visibleColorUniform.valid()){
+        _visibleColorUniform->set(color);
+    }
+}
+
+void VisibilityTestArea::setInvisibleAreaColor(const osg::Vec4 color)
+{
+    invisibleColor = color;
+
+    if(_invisibleColorUniform.valid()){
+        _invisibleColorUniform->set(color);
+    }
+}
+
+void VisibilityTestArea::updateProjectionMatrix()
+{
+    if(!_depthCamera.valid()) return;
+
+    //Updating Projection matrix of camera
+    {
+        double vFovRad = osg::DegreesToRadians((double)_verticalFOV);
+        double hFovRad = osg::DegreesToRadians((double)_horizontalFOV);
+
+        double top = near_plane * tan(vFovRad / 2.0);
+        double right = near_plane * tan(hFovRad / 2.0);
+
+        osg::Matrix shadowProj = osg::Matrix::frustum(-right, right,-top, top, near_plane, far_plane);
+
+        _depthCamera->setProjectionMatrix(shadowProj);
+    }
+
+    //updating view matrix of uniform
+    {
+        // Create a Bias Matrix (maps -1->1 to 0->1)
+        osg::Matrix biasMatrix = osg::Matrix::translate(1.0, 1.0, 1.0) * osg::Matrix::scale(0.5, 0.5, 0.5);
+
+        // Combine them: VP = View * Projection * Bias
+        osg::Matrix viewProjectionBias = _depthCamera->getViewMatrix() * _depthCamera->getProjectionMatrix() * biasMatrix;
+
+        _cameraVPUniform->set(viewProjectionBias);
+    }
+
+    //updating projection of frustrum outline
+    _parentScene->getParent(0)->removeChild(frustumVisual);
+
+    frustumVisual = createFrustumNode(_depthCamera.get(), near_plane, far_plane);
+    _parentScene->getParent(0)->addChild(frustumVisual);
+
+
 }
 
 void  VisibilityTestArea::clear()
 {
     for (int i = 0; i < 6; i++)
     {
-        _depthCameras[i]->getOrCreateStateSet()->setAttribute(depthShader, osg::StateAttribute::OFF);
-        _depthCameras[i]->getOrCreateStateSet()->removeUniform(_lightPosUniform);
-        _depthCameras[i]->getOrCreateStateSet()->removeUniform(_farPlaneUniform);
-        _depthCameras[i]->getOrCreateStateSet()->removeUniform(_nearPlaneUniform);
-        _depthCameras[i]->getOrCreateStateSet()->removeUniform(_inverseViewUniform[i]);
-        _depthCameras[i]->removeChild(_shadowedScene);
-        _parentScene->removeChild(_depthCameras[i]);
+        _depthCamera->getOrCreateStateSet()->setAttribute(depthShader, osg::StateAttribute::OFF);
+        _depthCamera->getOrCreateStateSet()->removeUniform(_lightPosUniform);
+        _depthCamera->getOrCreateStateSet()->removeUniform(_farPlaneUniform);
+        _depthCamera->getOrCreateStateSet()->removeUniform(_nearPlaneUniform);
+        _depthCamera->getOrCreateStateSet()->removeUniform(_inverseViewUniform);
+        _depthCamera->removeChild(_shadowedScene);
+        _parentScene->removeChild(_depthCamera);
     }
 
     _parentScene->getOrCreateStateSet()->removeUniform(_visibleColorUniform);

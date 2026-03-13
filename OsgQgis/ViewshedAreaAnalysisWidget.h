@@ -30,6 +30,12 @@ private slots:
 
     void on_sb_verticleAngle_valueChanged(double arg1);
 
+    void on_sb_horizantalAngle_valueChanged(double arg1);
+
+    void on_sb_roll_valueChanged(double arg1);
+
+    void on_sb_pitch_valueChanged(double arg1);
+
 private:
     osg::Vec4 colorToVec(const QColor &color);
 

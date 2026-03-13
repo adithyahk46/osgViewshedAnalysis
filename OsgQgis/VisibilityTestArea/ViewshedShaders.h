@@ -83,98 +83,54 @@ const char* visibilityShaderFrag = R"(
     uniform vec4 invisibleColor;
 
     uniform sampler2D baseTexture;
-    uniform samplerCube shadowMap;
 
     uniform float near_plane;
     uniform float far_plane;
     uniform float user_area;
 
-    float linearizeDepth(float z)
-    {
-        float z_n = 2.0 * z - 1.0;
-        return 2.0 * near_plane * far_plane / (far_plane + near_plane - z_n * (far_plane - near_plane));
-    };
-
-    // Return 1 for shadowed, 0 visible
-    bool isShadowed(vec3 lightDir)
-    {
-        float bias = max(0.01 * (1.0 - dot(normal, lightDir)), 0.001) * far_plane;
-
-        float z = linearizeDepth(texture(shadowMap, lightDir).r);
-        return lightDistance - bias > z;
-    }
+    uniform sampler2D shadowMap; // Changed to sampler2D
+    uniform mat4 cameraVP;       // The new Uniform
 
     void main()
     {
         vec3 baseColor = texture(baseTexture, texCoords).rgb;
 
-        if (length(lightPos.xy - worldPos.xy) > user_area)
-            FragColor = vec4(baseColor, 1.0);
+        // 1. Project world position into Camera's Screen Space
+        vec4 projPos = cameraVP * vec4(worldPos, 1.0);
+        vec3 projCoords = projPos.xyz / projPos.w; // Perspective divide
+
+        // 2. Check if the point is inside the Camera's Frustum (FOV)
+        // Since we used a bias matrix, the valid range is [0.0, 1.0]
+        bool inFrustum = projCoords.x >= 0.0 && projCoords.x <= 1.0 &&
+                         projCoords.y >= 0.0 && projCoords.y <= 1.0 &&
+                         projCoords.z >= 0.0 && projCoords.z <= 1.0;
+
+        float shadow = 0.0;
+        if (inFrustum)
+        {
+            float closestDepth = texture(shadowMap, projCoords.xy).r;
+            float currentDepth = projCoords.z;
+
+            // Bias to prevent shadow acne
+            float bias = 0.0005;
+            shadow = (currentDepth - bias > closestDepth) ? 1.0 : 0.0;
+
+            // Lighting calculation
+            vec3 lightDir = normalize(lightPos - worldPos);
+            float normDif = max(dot(normal, lightDir), 0.0);
+
+            if (shadow < 0.5 && normDif > 0.1)
+                FragColor = vec4(baseColor * visibleColor.rgb, 1.0);
+            else
+                FragColor = vec4(baseColor * invisibleColor.rgb, 1.0);
+        }
         else
         {
-            vec3 lightDir = normalize(lightPos - worldPos);
-            float normDif = max(dot(lightDir, normal), 0.0);
-
-            vec3 lighting;
-            // Render as visible only if it can be seen by light source
-            if (normDif > 0.0 && isShadowed(-lightDir) == false)
-                lighting = visibleColor.rgb * baseColor;
-            else
-                lighting = invisibleColor.rgb * baseColor;
-
-            FragColor = vec4(lighting, 1.0);
+            FragColor = vec4(baseColor, 1.0);
         }
+
     }
 )";
-
-const char* depthVisualizerVert = R"(
-    #version 330 core
-
-    //in vec4 gl_Vertex;
-
-    uniform mat4 osg_ModelViewMatrix;
-    uniform mat4 osg_ViewMatrixInverse;
-    uniform vec3 center;
-
-    out vec3 texCoords;
-
-    void main()
-    {
-        vec3 worldPos = (osg_ViewMatrixInverse * osg_ModelViewMatrix * osg_Vertex).xyz;
-        texCoords = normalize(worldPos - center);
-        gl_Position = gl_ModelViewProjectionMatrix * osg_Vertex;
-    }
-)";
-
-const char* depthVisualizerFrag = R"(
-    #version 330 core
-    #extension GL_NV_shadow_samplers_cube : enable
-    out vec4 FragColor;
-
-    in vec3 texCoords;
-
-    uniform samplerCube depthMap;
-    uniform samplerCube colorMap;
-
-    const float near_plane = 0.1;
-    const float far_plane = 1000.0;
-
-    float LinearizeDepth(float z) 
-    { 
-    	float z_n = 2.0 * z - 1.0; 
-        return 2.0 * near_plane * far_plane / (far_plane + near_plane - z_n * (far_plane - near_plane)); 
-    }; 
-
-    void main()
-    {
-        // vec3 color = vec3(LinearizeDepth(textureCube(depthMap, texCoords).r)) / far_plane;
-        vec3 color = vec3(textureCube(depthMap, texCoords).r);
-        // vec3 color = vec3(textureCube(colorMap, texCoords));
-
-        FragColor = vec4(color, 1.0);
-    }
-)";
-
 
 
 

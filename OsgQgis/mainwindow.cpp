@@ -59,7 +59,7 @@ MainWindow::~MainWindow()
         "C:/Users/pnmt1054/Adithya_working_directory/Data/Elevation/43J11.dt2";
 
     std::string texturePath =
-        "C:/Users/pnmt1054/Videos/Screen Recordings/Screenshot 2026-02-19 115004.png";
+        "C:/Users/pnmt1054/Adithya_working_directory/QT_PROJECTS/osgViewshedAnalysis/OsgQgis/Data/eleTexture.png";
 
     std::ifstream file(dt2Path, std::ios::binary);
     if (!file)

@@ -25,12 +25,26 @@ public:
     ~VisibilityTestArea();
 
     void clear();
-    void setViwerPosition(const osg::Vec3 position);
 
-    void setRadius(int radius);
+    void setCameraPosition(const osg::Vec3 pos);
 
-    void setVerticalFOV(int fov);
-    void setHorizontalFOV(int fov);
+    void setDistance(int distance);
+
+    void setVerticalFOV(int angle);
+
+    void setHorizontalFOV(int angle);
+
+    /**
+     * @brief Rotation of Camera.
+     *
+     * rotate the camera  .
+     *
+     * @param angle
+     * @param axis
+     *
+     * @note
+     */
+    void setRotation(double angle,osg::Vec3 axis);
 
     void setVisibleAreaColor(const osg::Vec4 color);
     void setInvisibleAreaColor(const osg::Vec4 color);
@@ -39,8 +53,8 @@ public:
     void updateAttributes();
 
 protected:
-    osg::Camera* generateCubeCamera(osg::ref_ptr<osg::TextureCubeMap> cubeMap, unsigned face, osg::Camera::BufferComponent component);
-
+    void updateProjectionMatrix();
+    void updateViewMatrix();
 private:
 
     osg::ref_ptr<osg::Group> _shadowedScene;
@@ -57,18 +71,19 @@ private:
     osg::ref_ptr<osg::Program> _visibilityShader;
 
     osg::ref_ptr<osg::AutoTransform> _lightIndicator;
+    osg::ref_ptr<osg::MatrixTransform> frustumVisual;
 
 
-    osg::ref_ptr<osg::TextureCubeMap>  depthMap;
+    osg::ref_ptr<osg::Texture2D>  depthMap;
     osg::ref_ptr<osg::Program>  depthShader;
-    osg::ref_ptr<osg::Camera> _depthCameras[6];
-    osg::ref_ptr<osg::Camera> _colorCameras[6];
+    osg::ref_ptr<osg::Camera> _depthCamera;
 
-    int _verticalFOV = 90;
-    int _horizontalFOV = 90;
+    int _verticalFOV =  40;
+    int _horizontalFOV = 60;
 
     float near_plane = 0.5f;
     float far_plane ;
+    float farPlaneOffset = 5.0f;
 
 
     osg::Vec4  visibleColor   = osg::Vec4(159.0f / 255.0f, 255.0f / 255.0f, 61.0f / 255.0f, 0.5f);
@@ -76,9 +91,12 @@ private:
 
     osg::ref_ptr<osg::Uniform> _lightPosUniform;
     osg::ref_ptr<osg::Uniform> _viewRadiusUniform;
-    osg::ref_ptr<osg::Uniform> _inverseViewUniform[6] ;
+    osg::ref_ptr<osg::Uniform> _inverseViewUniform ;
     osg::ref_ptr<osg::Uniform> _farPlaneUniform;
     osg::ref_ptr<osg::Uniform> _nearPlaneUniform;
+
+    osg::ref_ptr<osg::Uniform> _cameraVPUniform;
+
 
     osg::ref_ptr<osg::Uniform> _baseTextureUniform;
     osg::ref_ptr<osg::Uniform> _shadowMapUniform;
@@ -86,4 +104,6 @@ private:
     osg::ref_ptr<osg::Uniform> _visibleColorUniform;
     osg::ref_ptr<osg::Uniform> _invisibleColorUniform;
 
+    void setupDebugHUD();
+    void setUpCamera();
 };
